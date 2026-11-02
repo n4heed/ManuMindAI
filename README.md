@@ -145,7 +145,146 @@ score). Concretely:
   score from a trained model, which is a materially different number with its own distribution -
   `RAG_SIMILARITY_THRESHOLD` would need to be re-measured for that provider rather than reused.
 
-## 4. Known limitations (honest, as of this report)
+## 4. Dual-Answer RAG (RAG-only + Groq)
+
+Every eligible question now produces **two independent answers**, shown side by side on the
+Engineer and Supervisor dashboards:
+
+- **RAG-ONLY** - exactly the existing deterministic extractive answer described in section 3
+  above. Unchanged by this feature: same retrieval, same threshold, same generator, same
+  `Citation` rows.
+- **RAG + GROQ AI** - the *same retrieved chunks* sent to Groq's OpenAI-compatible chat API
+  (`https://api.groq.com/openai/v1`, default model `openai/gpt-oss-120b`), which generates a
+  fuller, grounded answer. Independently stored and independently fails without affecting the
+  RAG-only answer.
+
+### Why two answers, and how retrieval is shared
+
+`manuals/rag/pipeline.py: answer_question()` calls `retrieve_chunks()` **exactly once**. Both
+generators receive that same list - the RAG-only generator as before, and
+`_attach_groq_answer()` afterwards, which builds `[S1]`, `[S2]`, ... identifiers from those same
+chunks and nothing else. There is no second retrieval call, and Groq is never shown a full page
+or a full PDF - only the already-chunked (~600 char) excerpts already used for the RAG-only
+citations.
+
+### Groq integration architecture
+
+- `manuals/rag/groq_provider.py` - a provider independent of Django views/templates and of the
+  DB layer. It takes a question string and a list of plain `{"id","document_id","page_number","text"}`
+  dicts in, and returns a plain `GroqAnswer(text, cited_source_ids)` out.
+- **HTTP client: `requests`, not the stdlib `urllib`, and not the `openai` package.**
+  `pip show openai` confirmed the `openai` package is not installed in this project (and never
+  has been - the existing `openai`/`anthropic` RAG-only provider classes in
+  `manuals/rag/providers.py` only ever imported it lazily, inside a method body, and have never
+  actually been run). The first implementation of `groq_provider.py` used only the standard
+  library (`urllib.request`) for zero new dependencies. **During live verification against the
+  real Groq API, that implementation consistently got HTTP 403 "error code: 1010" from
+  Cloudflare** (the WAF in front of `api.groq.com`) - a client *network-fingerprint* block, not
+  a credentials or model-permission problem. Confirmed by testing the exact same request,
+  same key, same model, with `requests` instead: it succeeded immediately with a real 200
+  response. `requests` (already present in this project's virtual environment, and now
+  declared in `requirements.txt`) is used for exactly that reason, not for API ergonomics.
+  Swapping to the real `openai` package later (pointed at Groq's base URL) would only require
+  changing this one file.
+- **Prompting and grounding**: the system prompt (`SYSTEM_PROMPT` in `groq_provider.py`)
+  explicitly forbids general knowledge, invented measurements/intervals/ratings, and
+  unsupported safety-critical instructions, and requires every claim to be cited with its
+  `[S#]` identifier. The retrieved passages are explicitly described to the model as untrusted
+  data, not instructions.
+- **Strict Structured Outputs, not prose with `[S#]` hints.** `groq_provider.py` sends Groq's
+  Chat Completions `response_format: {"type": "json_schema", "json_schema": {"strict": true,
+  "schema": ...}}`, forcing the model's own output to be JSON matching
+  `{"status": "answered"|"insufficient_evidence", "claims": [{"text", "sources": [{"source_id",
+  "supporting_quote"}]}]}` - every property required, every object `additionalProperties:
+  false`, as Groq's strict mode requires. This replaced an earlier version that only asked the
+  model to mention `[S#]` somewhere in free-text prose, which a real live test showed the model
+  does not reliably do for multi-part questions - the structured schema makes citing a source
+  per claim part of the response *shape itself*, not a instruction the model can skip.
+- **Citation validation is mandatory, server-side, and per-claim (not just per-answer).**
+  Structured Outputs guarantees response *shape*, not factual truth, so
+  `manuals/rag/pipeline.py: _validate_claims()` independently checks, for every claim's every
+  source: (1) the `source_id` is one of the exact identifiers sent to Groq - never trusted
+  otherwise; (2) the source's chunk belongs to the question's own machine (defense in depth -
+  retrieval is already machine-scoped, so this can never actually differ, but it's checked
+  explicitly rather than assumed); (3) the `supporting_quote` is a real, whitespace-normalized
+  substring of that chunk's actual text - a fabricated or altered quotation is rejected even
+  when the `source_id` is real. A source that fails any check is dropped; a claim with zero
+  surviving sources is dropped entirely (never shown unsupported); if **every** claim is
+  dropped, the whole Groq answer is marked `failed` rather than shown as properly cited. Every
+  surviving `GroqCitation` row's manual, page number, and PDF link are resolved from the
+  database, not from anything Groq said - and the PDF link is the same authenticated
+  `ManualFileView` endpoint used everywhere else; no public `/media/` URL is ever produced.
+
+### Default model and how to change it
+
+Default: `openai/gpt-oss-120b`. Configurable via `GROQ_MODEL` in `.env` - no code change needed.
+
+### Environment variables
+
+Add these to your own `.env` (never commit `.env` - it stays gitignored; `.env.example` only
+has blank/placeholder values for these):
+
+```
+LLM_ENABLED=False
+GROQ_API_KEY=
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=openai/gpt-oss-120b
+LLM_TIMEOUT=30
+```
+
+These are deliberately separate from `EMBEDDING_PROVIDER`/`LLM_PROVIDER` (section 3), which
+still control the RAG-only generator and remain `local` - this feature does not touch them.
+
+### How to manually add your Groq API key
+
+1. Open your local `.env` file (not `.env.example`) in the project root.
+2. Set `LLM_ENABLED=True`.
+3. Set `GROQ_API_KEY=<your real key>`.
+4. Optionally adjust `GROQ_MODEL` / `GROQ_BASE_URL` / `LLM_TIMEOUT`.
+5. Restart the Django dev server so the new settings are read.
+
+No code change is required. The RAG-only answer does **not** depend on this key at all - it
+works identically with or without it, both before and after you add one.
+
+### How the platform behaves when Groq is unavailable or fails
+
+- **`LLM_ENABLED=False` (the default) or no `GROQ_API_KEY` set**: Groq is never called - not
+  even once, no retry loop - and both dashboards show the RAG + Groq AI card as clearly
+  **"Not configured"**, right next to the normal RAG-only answer.
+- **Insufficient evidence**: if retrieval finds nothing, Groq is never called either - both
+  answers show the same abstention message, consistent with the existing RAG-only behaviour.
+- **A real API failure** (invalid key, rate limit, timeout, network error, malformed/empty
+  response, invalid citations): the Groq card shows **"Failed"** with a short, sanitized
+  message (never a raw stack trace, filesystem path, or the API key) - the RAG-only card next
+  to it is completely unaffected, because the RAG-only answer is already saved to the database
+  before Groq is ever called.
+- Retryable failures (HTTP 429, HTTP 5xx, network/timeout errors) get a small bounded number of
+  retries (`GroqLLMProvider.MAX_ATTEMPTS = 2`); invalid credentials (401/403) fail immediately
+  with no retry.
+
+### Running the automated tests (no API key needed)
+
+```bash
+.venv\Scripts\python.exe manage.py test manuals.tests.test_groq_provider
+.venv\Scripts\python.exe manage.py test manuals.tests.test_dual_answer_rag
+```
+
+Every HTTP call Groq would make is mocked (`unittest.mock`) - these tests make **no real network
+call** and need no API key, per the project requirement to implement and test this feature
+before a real key is available.
+
+### Running the optional live integration smoke test (only after you add a real key)
+
+```bash
+.venv\Scripts\python.exe manage.py groq_smoke_test
+```
+
+This makes one **real** call to the configured Groq API with a sample question, to confirm the
+integration genuinely works end to end. It is never run automatically by this project's test
+suite or by any command in this milestone's implementation - run it yourself, by hand, only
+after completing the steps in "How to manually add your Groq API key" above.
+
+## 5. Known limitations (honest, as of this report)
 
 - **PyMuPDF was blocked by Windows Smart App Control on the dev machine for part of this
   session** (`CodeIntegrity` event: *"did not meet the Enterprise signing level requirements"*).
@@ -172,6 +311,30 @@ score). Concretely:
 - **Citation/relevance score is lexical, not semantic** - see "What the citation 'score' is -
   and is not" above. This is the most significant quality limitation until a real embedding
   provider is configured.
+- **Live Groq integration has been verified against the real API**, twice: first with
+  free-text `[S#]` prompting (see below for why that was replaced), and again after switching
+  to Strict Structured Outputs. The structured version was live-tested with 4 real scenarios
+  (simple, multi-part, multi-source-single-claim, insufficient-evidence) via
+  `manage.py groq_smoke_test`, all exactly as expected, and with the actual previously-failing
+  question through the real Engineer dashboard - it now answers correctly with two separate,
+  quote-verified claims.
+- **Fixed, found via a real live test, not a mock: free-text `[S#]` citation prompting was not
+  reliable for multi-part questions.** The question *"What does E17 mean and what should be
+  recorded before escalation?"* was asked live and Groq's answer didn't include `[S#]` markers
+  for every claim, so the backend correctly rejected it (`groq_status: "failed"`) rather than
+  show an uncited answer - the validation worked as designed, but the free-text prompting
+  approach it was validating against wasn't reliable enough. Fixed by switching to Groq Strict
+  Structured Outputs (see "Dual-Answer RAG" above), which was then live-verified to answer the
+  exact same question correctly, with each part as its own cited, quote-verified claim.
+- **Fixed, found via the same live test: a manual uploaded under the wrong machine.** The
+  live screenshot that surfaced the citation-format issue also showed a citation to
+  `AP-MNT-01` (a manual whose own text says "Machine: M-AP500/AP-500" on every page) for a
+  question asked on M-AC90. Investigation confirmed retrieval and machine isolation were never
+  broken (`Chunk.objects.filter(machine=machine)` was always correctly scoped) - the manual had
+  simply been uploaded with the wrong machine selected at upload time, so its chunks correctly
+  inherited that wrong machine tag. Fixed by reassigning the manual to its real machine and
+  re-ingesting it (a data correction, not a code or architecture change); verified afterward
+  that the exact same question's retrieval no longer includes that manual at all.
 - **Fixed, found and corrected in this milestone**: a failed *re-ingestion* of a manual used to
   leave the previous successful ingestion's pages/chunks in the database untouched (only
   `status` flipped to `failed`), so stale content could still be silently retrieved under a
@@ -179,7 +342,7 @@ score). Concretely:
   not a mock. Fixed in `manuals/services.py: ingest_manual` - a failed (re-)ingestion now always
   clears that manual's pages/chunks/page_count.
 
-## 5. Requirements compliance matrix
+## 6. Requirements compliance matrix
 
 | Requirement (brief) | Status | Where |
 |---|---|---|
@@ -196,23 +359,33 @@ score). Concretely:
 | Check: retrieval excludes other machine's passages | Done | `tests/test_pipeline.py::MachineIsolationRetrievalTests` |
 | Question history (Engineer: own; Supervisor: all, read-only) | Done, tested | `QuestionHistoryView`; `tests/test_api_permissions.py::QuestionHistoryScopeTests` |
 
-## 6. Tests
+## 7. Tests
 
 ```bash
 .venv\Scripts\python.exe manage.py test manuals
 ```
 
-**57/57 passing** (last run: see milestone report). Covers: chunking edge cases, embedding
-determinism and true/false-match separation (including light stemming), ingestion
-success/failure/re-ingestion (both mocked for speed AND against real temporary PDF files -
-valid, corrupt, encrypted, and image-only, built with PyMuPDF itself - see
-`tests/test_real_pdf_ingestion.py` and `tests/pdf_fixtures.py`), RAG abstention, machine
-isolation (retrieval layer, end-to-end, and the "identical alarm code means something different
-on each machine" scenario in `tests/test_retrieval_regression.py`), citation-to-chunk accuracy,
-per-page citation dedup, chunk-boundary word-safety, retrieval threshold/top-K edge cases, and
-all role-based API permission/isolation checks.
+**130/130 passing** (last run: see milestone report). Covers everything described in earlier
+milestones (chunking edge cases, embedding determinism and true/false-match separation,
+ingestion success/failure/re-ingestion against both mocks and real temporary PDF files, RAG
+abstention, machine isolation, citation-to-chunk accuracy, per-page citation dedup,
+chunk-boundary word-safety, retrieval threshold/top-K edge cases, role-based API
+permission/isolation checks, the security audit regression suite, and secure PDF delivery),
+plus this milestone's additions:
 
-## 7. Demo script (maps to the official checklist)
+- `tests/test_groq_provider.py` (19 tests) - the Groq provider in isolation: configuration
+  (disabled/no key), request payload shape, response parsing, retry/backoff behaviour, and that
+  no error message ever leaks the API key. Every HTTP call is mocked; no real network call.
+- `tests/test_dual_answer_rag.py` (19 tests) - the dual-answer pipeline end to end: retrieval
+  happens exactly once and both generators receive it; insufficient evidence prevents any Groq
+  call; a Groq failure never destroys the RAG-only answer; invalid/partially-invalid citation
+  identifiers are rejected and only backend-validated citations are ever stored; machine
+  isolation holds for Groq citations too; the API response exposes both answer objects with the
+  authenticated PDF link; the API key never appears in any response; a Supervisor can read both
+  answers but still cannot ask a question; and a question created before this feature existed
+  still serializes correctly (`groq_status: "unavailable"`, no crash).
+
+## 8. Demo script (maps to the official checklist)
 
 1. Log in as `admin1` -> register machine(s) (or they're already registered if you ran
    `ingest_sample_manuals`) -> upload a PDF -> watch status go `processing` -> `completed`
@@ -230,7 +403,7 @@ all role-based API permission/isolation checks.
 7. Log in as `supervisor1` -> read-only history table across all engineers/machines, with an
    "unanswered only" filter.
 
-## 8. Likely judge questions
+## 9. Likely judge questions
 
 - **"Why isn't this using a real LLM?"** No organizer embedding/LLM access had been issued
   as of submission (per `START_HERE.txt`). The provider interface in

@@ -87,7 +87,9 @@ class QuestionHistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Question.objects.select_related("machine", "user").prefetch_related("citations__manual")
+        qs = Question.objects.select_related("machine", "user").prefetch_related(
+            "citations__manual", "groq_citations__manual", "groq_claims__citations__manual"
+        )
         role = user_role(user)
         if role in (Profile.Role.SUPERVISOR, Profile.Role.ADMIN):
             machine_id = self.request.query_params.get("machine")

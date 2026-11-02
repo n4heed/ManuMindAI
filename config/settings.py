@@ -133,6 +133,18 @@ ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY')
 RAG_SIMILARITY_THRESHOLD = float(env('RAG_SIMILARITY_THRESHOLD', '0.12'))
 RAG_TOP_K = int(env('RAG_TOP_K', '5'))
 
+# --- Dual-Answer RAG: Groq provider configuration --------------------------
+# This is deliberately separate from EMBEDDING_PROVIDER/LLM_PROVIDER above,
+# which still control the existing RAG-only answer generator (unchanged by
+# this feature). LLM_ENABLED defaults to False and GROQ_API_KEY defaults to
+# empty, so the app runs exactly as before - RAG-only answers only - until
+# both are explicitly set. See README "Dual-Answer RAG" for how to enable it.
+LLM_ENABLED = env('LLM_ENABLED', 'False') == 'True'
+GROQ_API_KEY = env('GROQ_API_KEY', '')
+GROQ_BASE_URL = env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')
+GROQ_MODEL = env('GROQ_MODEL', 'openai/gpt-oss-120b')
+LLM_TIMEOUT = int(env('LLM_TIMEOUT', '30'))
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',

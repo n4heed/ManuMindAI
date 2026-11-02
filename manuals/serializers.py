@@ -1,7 +1,7 @@
 from django.urls import reverse
 from rest_framework import serializers
 
-from .models import Citation, Machine, Manual, Question
+from .models import Citation, GroqCitation, GroqClaim, Machine, Manual, Question
 
 
 class MachineSerializer(serializers.ModelSerializer):
@@ -86,10 +86,52 @@ class CitationSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
 
+class GroqCitationSerializer(serializers.ModelSerializer):
+    document_id = serializers.CharField(source="manual.document_id", read_only=True)
+    revision = serializers.CharField(source="manual.revision", read_only=True)
+    manual_file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroqCitation
+        fields = [
+            "id",
+            "manual",
+            "document_id",
+            "revision",
+            "page_number",
+            "excerpt",
+            "quote",
+            "score",
+            "source_id",
+            "manual_file_url",
+        ]
+
+    def get_manual_file_url(self, obj):
+        if not obj.manual.file:
+            return None
+        request = self.context.get("request")
+        url = reverse("api-manual-file", kwargs={"manual_id": obj.manual_id})
+        return request.build_absolute_uri(url) if request else url
+
+
+class GroqClaimSerializer(serializers.ModelSerializer):
+    citations = GroqCitationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = GroqClaim
+        fields = ["id", "order", "text", "citations"]
+
+
 class QuestionSerializer(serializers.ModelSerializer):
     citations = CitationSerializer(many=True, read_only=True)
     machine_id_code = serializers.CharField(source="machine.machine_id", read_only=True)
     asked_by = serializers.CharField(source="user.username", read_only=True)
+    # Dual-Answer RAG: 'answers.rag_only' mirrors the top-level answer_text/
+    # status/llm_provider/citations fields below exactly - those are kept as
+    # their own top-level fields too (unchanged) for backward compatibility
+    # with anything already reading this response shape. 'answers.rag_groq'
+    # is the new, independent Groq-generated answer.
+    answers = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
@@ -104,8 +146,47 @@ class QuestionSerializer(serializers.ModelSerializer):
             "llm_provider",
             "created_at",
             "citations",
+            "answers",
         ]
-        read_only_fields = ["answer_text", "status", "llm_provider", "created_at", "citations", "asked_by"]
+        read_only_fields = [
+            "answer_text",
+            "status",
+            "llm_provider",
+            "created_at",
+            "citations",
+            "asked_by",
+            "answers",
+        ]
+
+    def get_answers(self, obj):
+        return {
+            "rag_only": {
+                "status": obj.status,
+                "provider": obj.llm_provider,
+                "answer": obj.answer_text,
+                "citations": CitationSerializer(obj.citations.all(), many=True, context=self.context).data,
+            },
+            "rag_groq": {
+                "status": obj.groq_status,
+                "provider": "groq",
+                "model": obj.groq_model or None,
+                "answer": obj.groq_answer_text,
+                # New structured-output answers are broken into per-claim
+                # citations (each claim shows only its own sources). Older
+                # answers, from before structured outputs, have no claims at
+                # all but still have a flat 'citations' list (claim=None) -
+                # both render correctly; the frontend prefers 'claims' when
+                # non-empty and falls back to the flat list otherwise.
+                "claims": GroqClaimSerializer(
+                    obj.groq_claims.all(), many=True, context=self.context
+                ).data,
+                "citations": GroqCitationSerializer(
+                    obj.groq_citations.filter(claim__isnull=True), many=True, context=self.context
+                ).data,
+                "generation_time_ms": obj.groq_generation_time_ms,
+                "error_message": obj.groq_error_message or None,
+            },
+        }
 
 
 class AskQuestionSerializer(serializers.Serializer):

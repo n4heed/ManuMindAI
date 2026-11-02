@@ -37,20 +37,12 @@ async function loadMachines() {
 
 function renderQuestion(q) {
   return `
-    <div class="flat-card mb-3">
-      <div class="flat-card-body">
-        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-          <h3 class="h6 mb-0">${escapeHtml(q.question_text)}</h3>
-          ${renderStatusBadge(q.status)}
-        </div>
-        ${renderProviderNote(q.llm_provider)}
-        <div class="answer-panel mb-2">
-          <div class="answer-text">${escapeHtml(q.answer_text)}</div>
-        </div>
-        ${q.citations && q.citations.length ? `<div class="text-muted-strong small fw-semibold mb-1">Sources</div>` : ''}
-        ${renderCitations(q.citations)}
-        <div class="text-muted-strong small mt-2">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
+    <div class="mb-4">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <h3 class="h6 mb-0">${escapeHtml(q.question_text)}</h3>
       </div>
+      ${renderDualAnswers(q)}
+      <div class="text-muted-strong small mt-2">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
     </div>`;
 }
 

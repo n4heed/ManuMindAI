@@ -85,6 +85,12 @@ class Question(models.Model):
         ANSWERED = 'answered', 'Answered'
         INSUFFICIENT_EVIDENCE = 'insufficient_evidence', 'Insufficient evidence'
 
+    class GroqStatus(models.TextChoices):
+        COMPLETED = 'completed', 'Completed'
+        INSUFFICIENT_EVIDENCE = 'insufficient_evidence', 'Insufficient evidence'
+        UNAVAILABLE = 'unavailable', 'Unavailable'
+        FAILED = 'failed', 'Failed'
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='questions')
     machine = models.ForeignKey(Machine, on_delete=models.CASCADE, related_name='questions')
     question_text = models.TextField()
@@ -92,6 +98,18 @@ class Question(models.Model):
     status = models.CharField(max_length=30, choices=Status.choices)
     llm_provider = models.CharField(max_length=50, default='local')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Dual-Answer RAG: the RAG-only answer above (status/answer_text/
+    # llm_provider/citations) is unchanged from before this feature. These
+    # fields hold the independent Groq-generated answer, built from the
+    # exact same retrieved evidence. default=UNAVAILABLE so every question
+    # asked before this feature existed - which has no Groq data at all -
+    # reads back as "unavailable" rather than fabricating a status.
+    groq_status = models.CharField(max_length=30, choices=GroqStatus.choices, default=GroqStatus.UNAVAILABLE)
+    groq_answer_text = models.TextField(blank=True, default='')
+    groq_model = models.CharField(max_length=100, blank=True, default='')
+    groq_error_message = models.TextField(blank=True, default='')
+    groq_generation_time_ms = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -101,6 +119,8 @@ class Question(models.Model):
 
 
 class Citation(models.Model):
+    """RAG-only answer citations (unchanged from before the Groq feature)."""
+
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='citations')
     manual = models.ForeignKey(Manual, on_delete=models.CASCADE, related_name='citations')
     page_number = models.PositiveIntegerField()
@@ -109,3 +129,63 @@ class Citation(models.Model):
 
     def __str__(self):
         return f'{self.manual.document_id} p.{self.page_number}'
+
+
+class GroqClaim(models.Model):
+    """
+    One factual statement from a Groq structured-output answer
+    (manuals/rag/groq_provider.py's {"claims": [...]} schema), kept separate
+    per claim so a multi-part question's answer can show each part with its
+    own sources rather than one citation list for an entire answer.
+
+    A GroqClaim row only ever exists here if at least one of its sources
+    survived backend validation (manuals/rag/pipeline.py:
+    _attach_groq_answer) - an unsupported claim is dropped entirely, never
+    stored and shown without evidence.
+    """
+
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='groq_claims')
+    order = models.PositiveIntegerField()
+    text = models.TextField()
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f'{self.question_id} claim #{self.order}: {self.text[:40]}'
+
+
+class GroqCitation(models.Model):
+    """
+    Citations for the Groq-generated answer. Kept as a separate model from
+    Citation (rather than a shared/generic table) so the RAG-only answer's
+    existing data and behavior are completely untouched by this feature.
+
+    Only ever created from source identifiers ([S1], [S2], ...) that the
+    backend itself validated against the chunks actually retrieved and sent
+    to Groq - never from an identifier Groq invented - AND, once structured
+    outputs were added, only once the `quote` was also confirmed to be an
+    actual (whitespace-normalized) substring of that source's text. `score`
+    is the original retrieval similarity score (the same shared evidence
+    used for the RAG-only answer), never a value the LLM returned.
+
+    `claim` is null for rows created before structured outputs (a flat,
+    single-answer-text response with no per-claim breakdown) and set for
+    every row created after - both are rendered correctly for backward
+    compatibility (see QuestionSerializer.get_answers / renderDualAnswers()
+    in base.html).
+    """
+
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='groq_citations')
+    claim = models.ForeignKey(
+        GroqClaim, on_delete=models.CASCADE, related_name='citations', null=True, blank=True
+    )
+    manual = models.ForeignKey(Manual, on_delete=models.CASCADE, related_name='groq_citations')
+    page_number = models.PositiveIntegerField()
+    excerpt = models.TextField()
+    quote = models.TextField(blank=True, default='')
+    score = models.FloatField()
+    source_id = models.CharField(max_length=10)
+
+    def __str__(self):
+        return f'{self.source_id} -> {self.manual.document_id} p.{self.page_number}'

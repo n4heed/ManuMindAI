@@ -95,9 +95,99 @@
           <strong class="citation-meta" style="color: var(--color-text);">${escapeHtml(c.document_id)} (rev ${escapeHtml(c.revision)}) &mdash; page ${c.page_number}</strong>
           <span class="citation-score">similarity score ${c.score.toFixed(2)}</span>
         </div>
-        <pre class="excerpt mb-1">${escapeHtml(c.excerpt)}</pre>
+        ${c.quote ? `<div class="small fw-semibold mt-1" style="color: var(--color-text);">Exact supporting quote:</div><pre class="excerpt mb-1">${escapeHtml(c.quote)}</pre>` : `<pre class="excerpt mb-1">${escapeHtml(c.excerpt)}</pre>`}
         ${c.manual_file_url ? `<a href="${encodeURI(c.manual_file_url)}#page=${c.page_number}" target="_blank" rel="noopener" class="small">Open PDF at page ${c.page_number} &rarr;</a>` : ''}
       </div>`).join('') + `</div>`;
+  }
+
+  // Dual-Answer RAG (structured): one block per validated claim, each with
+  // only its own supporting citations - never one citation list for an
+  // entire multi-part answer. A claim only exists here if the backend
+  // confirmed at least one source's exact quote really appears in that
+  // source's chunk (manuals/rag/pipeline.py: _validate_claims).
+  function renderGroqClaims(claims) {
+    if (!claims || !claims.length) return '';
+    return claims.map(claim => `
+      <div class="mb-3">
+        <p class="answer-text mb-1">${escapeHtml(claim.text)}</p>
+        ${renderCitations(claim.citations)}
+      </div>`).join('');
+  }
+
+  // Dual-Answer RAG: shared by the Engineer and Supervisor dashboards so the
+  // two answer cards never drift out of sync between the two views. `q` is
+  // a Question API object; `q.answers.rag_only` / `q.answers.rag_groq` are
+  // the two independent answers (see manuals/serializers.py QuestionSerializer).
+  function renderGroqStatusBadge(status) {
+    const map = {
+      completed: '<span class="status-pill status-pill-success">Answered</span>',
+      insufficient_evidence: '<span class="status-pill status-pill-neutral">Insufficient evidence</span>',
+      unavailable: '<span class="status-pill status-pill-neutral">Not configured</span>',
+      failed: '<span class="status-pill status-pill-danger">Failed</span>',
+    };
+    return map[status] || map.unavailable;
+  }
+
+  function renderDualAnswers(q) {
+    const answers = q.answers || {};
+    const ragOnly = answers.rag_only || {status: q.status, provider: q.llm_provider, answer: q.answer_text, citations: q.citations};
+    const groq = answers.rag_groq || {status: 'unavailable'};
+
+    const ragOnlyCard = `
+      <div class="flat-card answer-card">
+        <div class="flat-card-body">
+          <div class="d-flex justify-content-between align-items-start mb-1 gap-2">
+            <div>
+              <div class="answer-card-label">RAG-ONLY</div>
+              <div class="answer-card-desc">Generated using retrieved manufacturing manual passages without an LLM.</div>
+            </div>
+            ${renderStatusBadge(ragOnly.status)}
+          </div>
+          ${renderProviderNote(ragOnly.provider)}
+          <div class="answer-panel mb-2"><div class="answer-text">${escapeHtml(ragOnly.answer || '')}</div></div>
+          ${ragOnly.citations && ragOnly.citations.length ? '<div class="text-muted-strong small fw-semibold mb-1">Sources</div>' : ''}
+          ${renderCitations(ragOnly.citations)}
+        </div>
+      </div>`;
+
+    let groqBody;
+    if (groq.status === 'completed') {
+      const header = `
+        <div class="small text-muted-strong mb-2">Model: ${escapeHtml(groq.model || 'unknown')}${groq.generation_time_ms != null ? ' &middot; ' + groq.generation_time_ms + ' ms' : ''}</div>
+        <div class="flat-alert flat-alert-neutral mb-2"><span>AI-generated answer. Each statement below is grounded in its own cited, quote-verified source. The similarity score is a lexical ranking signal, not a calibrated confidence value.</span></div>`;
+      if (groq.claims && groq.claims.length) {
+        // Structured-output answer: one block per claim, each with only its own sources.
+        groqBody = header + `<div class="answer-panel">${renderGroqClaims(groq.claims)}</div>`;
+      } else {
+        // Legacy (pre-structured-output) answer: a single flat answer with one citation list.
+        groqBody = header + `
+          <div class="answer-panel mb-2"><div class="answer-text">${escapeHtml(groq.answer || '')}</div></div>
+          ${groq.citations && groq.citations.length ? '<div class="text-muted-strong small fw-semibold mb-1">Sources</div>' : ''}
+          ${renderCitations(groq.citations)}`;
+      }
+    } else if (groq.status === 'insufficient_evidence') {
+      groqBody = `<div class="flat-alert flat-alert-neutral"><span>${escapeHtml(groq.answer || 'The available manuals do not contain enough information to answer this question.')}</span></div>`;
+    } else if (groq.status === 'unavailable') {
+      groqBody = '<div class="flat-alert flat-alert-neutral"><span>Groq AI answer unavailable &mdash; the integration has not been configured yet. The RAG-only answer is unaffected.</span></div>';
+    } else {
+      groqBody = `<div class="flat-alert flat-alert-danger"><span>Groq AI answer failed: ${escapeHtml(groq.error_message || 'an unknown error occurred')}. The RAG-only answer is unaffected.</span></div>`;
+    }
+
+    const groqCard = `
+      <div class="flat-card answer-card">
+        <div class="flat-card-body">
+          <div class="d-flex justify-content-between align-items-start mb-1 gap-2">
+            <div>
+              <div class="answer-card-label">RAG + GROQ AI</div>
+              <div class="answer-card-desc">Generated by Groq using retrieved manufacturing manual passages.</div>
+            </div>
+            ${renderGroqStatusBadge(groq.status)}
+          </div>
+          ${groqBody}
+        </div>
+      </div>`;
+
+    return `<div class="answer-grid">${ragOnlyCard}${groqCard}</div>`;
   }
 </script>
 {% block scripts %}{% endblock %}

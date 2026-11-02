@@ -364,3 +364,32 @@ pre.excerpt {
 }
 
 .text-muted-strong { color: var(--color-text-muted); }
+
+/* ---- Dual-answer cards (RAG-only vs RAG+Groq) ------------------------ */
+
+.answer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 991.98px) {
+  .answer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.answer-card-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-primary);
+}
+
+.answer-card-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.25rem;
+}
