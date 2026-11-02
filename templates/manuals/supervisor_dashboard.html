@@ -1,19 +1,26 @@
 {% extends "manuals/base.html" %}
 {% block title %}Supervisor Dashboard{% endblock %}
+{% block page_title %}Question History (read-only){% endblock %}
 {% block content %}
-<h2 class="mb-4">Question History (read-only)</h2>
 
-<div class="d-flex gap-2 mb-3 align-items-center">
-  <select class="form-select w-auto" id="machine-filter">
-    <option value="">All machines</option>
-  </select>
-  <div class="form-check">
-    <input class="form-check-input" type="checkbox" id="unanswered-only">
-    <label class="form-check-label" for="unanswered-only">Unanswered / insufficient-evidence only</label>
+<div class="flat-card mb-3">
+  <div class="flat-card-body py-3">
+    <div class="d-flex flex-wrap gap-3 align-items-center">
+      <div>
+        <label class="form-label mb-1" for="machine-filter">Machine</label>
+        <select class="form-select" id="machine-filter">
+          <option value="">All machines</option>
+        </select>
+      </div>
+      <div class="form-check mt-4">
+        <input class="form-check-input" type="checkbox" id="unanswered-only">
+        <label class="form-check-label" for="unanswered-only">Unanswered / insufficient-evidence only</label>
+      </div>
+    </div>
   </div>
 </div>
 
-<div id="history-area"><p class="text-muted">Loading...</p></div>
+<div id="history-area"><div class="empty-state">Loading&hellip;</div></div>
 {% endblock %}
 
 {% block scripts %}
@@ -25,7 +32,7 @@ async function loadMachines() {
   const machines = await resp.json();
   const select = document.getElementById('machine-filter');
   select.innerHTML = '<option value="">All machines</option>' +
-    machines.map(m => `<option value="${m.id}">${m.machine_id} - ${m.name}</option>`).join('');
+    machines.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
 }
 
 function render() {
@@ -37,25 +44,29 @@ function render() {
 
   const area = document.getElementById('history-area');
   if (!rows.length) {
-    area.innerHTML = '<p class="text-muted">No matching questions.</p>';
+    area.innerHTML = '<div class="empty-state">No matching questions.</div>';
     return;
   }
   // Card list (not a dense table) so the answer, provider label, and
   // citations can be shown inline - the same information an Engineer sees
   // for their own history, since a Supervisor needs to audit it, not just
-  // see a status badge.
+  // see a status badge. This view never offers a way to ask a question or
+  // modify a record - read-only, consistently.
   area.innerHTML = rows.map(q => `
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start">
+    <div class="flat-card mb-3">
+      <div class="flat-card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
           <div>
-            <h6 class="mb-0">${escapeHtml(q.question_text)}</h6>
-            <div class="text-muted small">${escapeHtml(q.asked_by)} &middot; ${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
+            <h3 class="h6 mb-0">${escapeHtml(q.question_text)}</h3>
+            <div class="text-muted-strong small">${escapeHtml(q.asked_by)} &middot; ${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
           </div>
           ${renderStatusBadge(q.status)}
         </div>
         ${renderProviderNote(q.llm_provider)}
-        <p class="mb-2">${escapeHtml(q.answer_text)}</p>
+        <div class="answer-panel mb-2">
+          <div class="answer-text">${escapeHtml(q.answer_text)}</div>
+        </div>
+        ${q.citations && q.citations.length ? `<div class="text-muted-strong small fw-semibold mb-1">Sources</div>` : ''}
         ${renderCitations(q.citations)}
       </div>
     </div>`).join('');

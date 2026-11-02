@@ -1,74 +1,104 @@
 {% extends "manuals/base.html" %}
 {% block title %}Administrator Dashboard{% endblock %}
+{% block page_title %}Administrator Dashboard{% endblock %}
 {% block content %}
-<h2 class="mb-4">Administrator Dashboard</h2>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-machines">&ndash;</div>
+      <div class="stat-label">Registered machines</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-manuals">&ndash;</div>
+      <div class="stat-label">Total manuals</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-completed">&ndash;</div>
+      <div class="stat-label">Completed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-failed">&ndash;</div>
+      <div class="stat-label">Failed</div>
+    </div>
+  </div>
+</div>
 
 <div class="row g-4">
   <div class="col-lg-5">
-    <div class="card shadow-sm mb-4">
-      <div class="card-body">
-        <h5 class="card-title">Register a machine</h5>
-        <form id="machine-form">
+    <div class="flat-card mb-4">
+      <div class="flat-card-body">
+        <h2 class="flat-card-title">Register a machine</h2>
+        <form id="machine-form" novalidate>
           <div class="mb-2">
-            <label class="form-label">Machine ID</label>
-            <input class="form-control" name="machine_id" placeholder="e.g. M-HP200" required>
+            <label class="form-label" for="f-machine-id">Machine ID</label>
+            <input class="form-control" id="f-machine-id" name="machine_id" placeholder="e.g. M-HP200" required>
           </div>
           <div class="mb-2">
-            <label class="form-label">Model</label>
-            <input class="form-control" name="model" placeholder="e.g. HP-200" required>
+            <label class="form-label" for="f-model">Model</label>
+            <input class="form-control" id="f-model" name="model" placeholder="e.g. HP-200" required>
           </div>
-          <div class="mb-2">
-            <label class="form-label">Name</label>
-            <input class="form-control" name="name" placeholder="e.g. Hydraulic forming press" required>
+          <div class="mb-3">
+            <label class="form-label" for="f-name">Name</label>
+            <input class="form-control" id="f-name" name="name" placeholder="e.g. Hydraulic forming press" required>
           </div>
           <button class="btn btn-primary" type="submit">Register machine</button>
-          <div id="machine-form-msg" class="mt-2"></div>
+          <div id="machine-form-msg" class="mt-2" role="status" aria-live="polite"></div>
         </form>
       </div>
     </div>
 
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title">Upload a manual</h5>
-        <form id="manual-form">
+    <div class="flat-card">
+      <div class="flat-card-body">
+        <h2 class="flat-card-title">Upload a manual</h2>
+        <form id="manual-form" novalidate>
           <div class="mb-2">
-            <label class="form-label">Machine</label>
+            <label class="form-label" for="manual-machine-select">Machine</label>
             <select class="form-select" name="machine" id="manual-machine-select" required></select>
           </div>
           <div class="mb-2">
-            <label class="form-label">Document ID</label>
-            <input class="form-control" name="document_id" placeholder="e.g. HP-OPS-01" required>
+            <label class="form-label" for="f-document-id">Document ID</label>
+            <input class="form-control" id="f-document-id" name="document_id" placeholder="e.g. HP-OPS-01" required>
           </div>
           <div class="mb-2">
-            <label class="form-label">Revision</label>
-            <input class="form-control" name="revision" placeholder="e.g. 1.0" required>
+            <label class="form-label" for="f-revision">Revision</label>
+            <input class="form-control" id="f-revision" name="revision" placeholder="e.g. 1.0" required>
           </div>
-          <div class="mb-2">
-            <label class="form-label">PDF file</label>
-            <input class="form-control" type="file" name="file" accept="application/pdf" required>
+          <div class="mb-3">
+            <label class="form-label" for="f-file">PDF file</label>
+            <input class="form-control" type="file" id="f-file" name="file" accept="application/pdf" required>
+            <div class="form-text text-muted-strong">PDF only, up to 25&nbsp;MB.</div>
           </div>
-          <button class="btn btn-primary" type="submit">Upload &amp; ingest</button>
-          <div id="manual-form-msg" class="mt-2"></div>
+          <button class="btn btn-primary" type="submit" id="manual-submit">Upload &amp; ingest</button>
+          <div id="manual-form-msg" class="mt-2" role="status" aria-live="polite"></div>
         </form>
       </div>
     </div>
   </div>
 
   <div class="col-lg-7">
-    <div class="card shadow-sm">
-      <div class="card-body">
+    <div class="flat-card">
+      <div class="flat-card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h5 class="card-title mb-0">Manuals &amp; ingestion status</h5>
-          <button class="btn btn-sm btn-outline-secondary" id="refresh-manuals">Refresh</button>
+          <h2 class="flat-card-title mb-0">Manuals &amp; ingestion status</h2>
+          <button class="btn btn-sm btn-outline-primary" id="refresh-manuals">Refresh</button>
         </div>
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr><th>Machine</th><th>Document</th><th>Rev</th><th>Status</th><th>Pages</th><th></th></tr>
-          </thead>
-          <tbody id="manuals-table-body">
-            <tr><td colspan="6" class="text-muted">Loading...</td></tr>
-          </tbody>
-        </table>
+        <div style="overflow-x: auto;">
+          <table class="flat-table">
+            <thead>
+              <tr><th>Machine</th><th>Document</th><th>Rev</th><th>Status</th><th>Pages</th><th></th></tr>
+            </thead>
+            <tbody id="manuals-table-body">
+              <tr><td colspan="6" class="text-muted-strong">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -79,31 +109,46 @@
 <script>
 let machinesCache = [];
 
+function statusPill(status) {
+  const map = {
+    completed: 'status-pill-success',
+    processing: 'status-pill-warning',
+    pending: 'status-pill-neutral',
+    failed: 'status-pill-danger',
+  };
+  const cls = map[status] || 'status-pill-neutral';
+  return `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
+}
+
 async function loadMachines() {
   const resp = await apiFetch('/api/machines/');
   machinesCache = await resp.json();
+  document.getElementById('stat-machines').textContent = machinesCache.length;
   const select = document.getElementById('manual-machine-select');
-  select.innerHTML = machinesCache.map(m => `<option value="${m.id}">${m.machine_id} - ${m.name}</option>`).join('');
+  select.innerHTML = machinesCache.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
 }
 
 async function loadManuals() {
   const resp = await apiFetch('/api/manuals/');
   const manuals = await resp.json();
+  document.getElementById('stat-manuals').textContent = manuals.length;
+  document.getElementById('stat-completed').textContent = manuals.filter(m => m.status === 'completed').length;
+  document.getElementById('stat-failed').textContent = manuals.filter(m => m.status === 'failed').length;
+
   const body = document.getElementById('manuals-table-body');
   if (!manuals.length) {
-    body.innerHTML = '<tr><td colspan="6" class="text-muted">No manuals uploaded yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state">No manuals uploaded yet. Use the form on the left to upload one.</div></td></tr>';
     return;
   }
   body.innerHTML = manuals.map(m => {
-    const badgeClass = {completed: 'bg-success', processing: 'bg-warning text-dark', pending: 'bg-secondary', failed: 'bg-danger'}[m.status] || 'bg-secondary';
-    const err = m.error_message ? `<div class="text-danger small">${m.error_message}</div>` : '';
+    const err = m.error_message ? `<div class="text-danger small mt-1">${escapeHtml(m.error_message)}</div>` : '';
     return `<tr>
-      <td>${m.machine_id_code}</td>
-      <td>${m.document_id}${err}</td>
-      <td>${m.revision}</td>
-      <td><span class="badge ${badgeClass}">${m.status}</span></td>
+      <td>${escapeHtml(m.machine_id_code)}</td>
+      <td>${escapeHtml(m.document_id)}${err}</td>
+      <td>${escapeHtml(m.revision)}</td>
+      <td>${statusPill(m.status)}</td>
       <td>${m.page_count}</td>
-      <td>${m.file ? `<a href="${m.file}" target="_blank" class="btn btn-sm btn-outline-primary">Open</a>` : ''}</td>
+      <td>${m.secure_file_url ? `<a href="${encodeURI(m.secure_file_url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open</a>` : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -112,19 +157,19 @@ document.getElementById('machine-form').addEventListener('submit', async (e) => 
   e.preventDefault();
   const form = e.target;
   const data = Object.fromEntries(new FormData(form).entries());
+  const msg = document.getElementById('machine-form-msg');
   const resp = await apiFetch('/api/machines/', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data),
   });
-  const msg = document.getElementById('machine-form-msg');
   if (resp.ok) {
-    msg.innerHTML = '<div class="alert alert-success py-1">Machine registered.</div>';
+    msg.innerHTML = '<div class="flat-alert flat-alert-neutral py-1"><span>Machine registered.</span></div>';
     form.reset();
     await loadMachines();
   } else {
     const body = await resp.json();
-    msg.innerHTML = `<div class="alert alert-danger py-1">${JSON.stringify(body)}</div>`;
+    msg.innerHTML = `<div class="flat-alert flat-alert-danger py-1"><span>${escapeHtml(JSON.stringify(body))}</span></div>`;
   }
 });
 
@@ -133,20 +178,26 @@ document.getElementById('manual-form').addEventListener('submit', async (e) => {
   const form = e.target;
   const formData = new FormData(form);
   const msg = document.getElementById('manual-form-msg');
-  msg.innerHTML = '<div class="text-muted">Uploading and extracting text&hellip; this may take a few seconds.</div>';
-  const resp = await apiFetch('/api/manuals/', {method: 'POST', body: formData});
-  if (resp.ok) {
-    const body = await resp.json();
-    if (body.status === 'failed') {
-      msg.innerHTML = `<div class="alert alert-danger py-1">Upload saved but ingestion failed: ${body.error_message}</div>`;
+  const submitBtn = document.getElementById('manual-submit');
+  submitBtn.disabled = true;
+  msg.innerHTML = '<div class="flat-alert flat-alert-neutral py-1"><span>Uploading and extracting text&hellip; this may take a few seconds.</span></div>';
+  try {
+    const resp = await apiFetch('/api/manuals/', {method: 'POST', body: formData});
+    if (resp.ok) {
+      const body = await resp.json();
+      if (body.status === 'failed') {
+        msg.innerHTML = `<div class="flat-alert flat-alert-danger py-1"><span>Upload saved but ingestion failed: ${escapeHtml(body.error_message)}. Fix the file and re-upload.</span></div>`;
+      } else {
+        msg.innerHTML = '<div class="flat-alert flat-alert-neutral py-1"><span>Manual uploaded and indexed.</span></div>';
+        form.reset();
+      }
+      await loadManuals();
     } else {
-      msg.innerHTML = '<div class="alert alert-success py-1">Manual uploaded and indexed.</div>';
-      form.reset();
+      const body = await resp.json();
+      msg.innerHTML = `<div class="flat-alert flat-alert-danger py-1"><span>${escapeHtml(JSON.stringify(body))}</span></div>`;
     }
-    await loadManuals();
-  } else {
-    const body = await resp.json();
-    msg.innerHTML = `<div class="alert alert-danger py-1">${JSON.stringify(body)}</div>`;
+  } finally {
+    submitBtn.disabled = false;
   }
 });
 

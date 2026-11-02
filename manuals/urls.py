@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from .views_api import (
     AskQuestionView,
+    ManualFileView,
     ManualListCreateView,
     MachineListCreateView,
     QuestionHistoryView,
@@ -16,6 +17,7 @@ urlpatterns = [
     path("api/whoami/", WhoAmIView.as_view(), name="api-whoami"),
     path("api/machines/", MachineListCreateView.as_view(), name="api-machines"),
     path("api/manuals/", ManualListCreateView.as_view(), name="api-manuals"),
+    path("api/manuals/<int:manual_id>/file/", ManualFileView.as_view(), name="api-manual-file"),
     path("api/questions/", QuestionHistoryView.as_view(), name="api-question-history"),
     path("api/questions/ask/", AskQuestionView.as_view(), name="api-ask-question"),
 ]

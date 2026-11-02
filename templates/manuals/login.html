@@ -1,28 +1,28 @@
-{% extends "manuals/base.html" %}
+{% extends "manuals/base_guest.html" %}
 {% block title %}Log in{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-5">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h4 class="card-title mb-3">Log in</h4>
-        {% if form.errors %}
-          <div class="alert alert-danger">Invalid username or password.</div>
-        {% endif %}
-        <form method="post">
-          {% csrf_token %}
-          <div class="mb-3">
-            <label class="form-label">Username</label>
-            {{ form.username }}
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Password</label>
-            {{ form.password }}
-          </div>
-          <button type="submit" class="btn btn-primary w-100">Log in</button>
-        </form>
-      </div>
+<div class="flat-card">
+  <div class="flat-card-body">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="#2563EB"/><path d="M7 12h4M7 16h7M7 8h10" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span class="fw-bold">ManuMindAI</span>
     </div>
+    <h1 class="h5 mb-3">Log in</h1>
+    {% if form.errors %}
+      <div class="flat-alert flat-alert-danger mb-3" role="alert"><span>Invalid username or password.</span></div>
+    {% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.username.id_for_label }}">Username</label>
+        {{ form.username }}
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+      </div>
+      <button type="submit" class="btn btn-primary w-100">Log in</button>
+    </form>
   </div>
 </div>
 {% endblock %}

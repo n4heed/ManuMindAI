@@ -1,5 +1,3 @@
-from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
@@ -17,5 +15,8 @@ urlpatterns = [
     path('', include('manuals.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# No public URL ever serves MEDIA_ROOT, in any environment - manual PDFs are
+# only readable through the authenticated ManualFileView (manuals/views_api.py),
+# which opens the file from disk via the Manual model, never through a URL.
+# See README "Secure PDF delivery" for what this means for a real deployment's
+# web server / reverse-proxy configuration.

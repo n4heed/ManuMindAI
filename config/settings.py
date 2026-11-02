@@ -16,11 +16,27 @@ def env(key, default=None):
     return os.environ.get(key, default)
 
 
-SECRET_KEY = env('DJANGO_SECRET_KEY', 'django-insecure-dev-only-change-me')
+_INSECURE_DEFAULT_SECRET_KEY = 'django-insecure-dev-only-change-me'
+SECRET_KEY = env('DJANGO_SECRET_KEY', _INSECURE_DEFAULT_SECRET_KEY)
 
 DEBUG = env('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [h.strip() for h in env('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
+
+if not DEBUG:
+    # Fail fast rather than silently deploying with the checked-in dev key.
+    if SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
+        raise RuntimeError(
+            'DJANGO_SECRET_KEY must be set to a real secret when DJANGO_DEBUG=False.'
+        )
+    # These only apply when DEBUG=False so local HTTP development is unaffected.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = env('DJANGO_SECURE_SSL_REDIRECT', 'True') == 'True'
+    # Opt-in, not a default: HSTS is only safe once the deployment's TLS setup
+    # is confirmed, and this project does not control that. See README for
+    # the organizer/deployer action required to enable it.
+    SECURE_HSTS_SECONDS = int(env('DJANGO_HSTS_SECONDS', '0'))
 
 
 INSTALLED_APPS = [

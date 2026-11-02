@@ -1,3 +1,4 @@
+from django.urls import reverse
 from rest_framework import serializers
 
 from .models import Citation, Machine, Manual, Question
@@ -11,6 +12,7 @@ class MachineSerializer(serializers.ModelSerializer):
 
 class ManualSerializer(serializers.ModelSerializer):
     machine_id_code = serializers.CharField(source="machine.machine_id", read_only=True)
+    secure_file_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Manual
@@ -21,6 +23,7 @@ class ManualSerializer(serializers.ModelSerializer):
             "document_id",
             "revision",
             "file",
+            "secure_file_url",
             "original_filename",
             "status",
             "error_message",
@@ -36,6 +39,19 @@ class ManualSerializer(serializers.ModelSerializer):
             "processed_at",
             "original_filename",
         ]
+        # 'file' accepts the upload on POST but is never echoed back with its
+        # raw storage URL - that URL is no longer publicly servable anyway
+        # (see config/urls.py), but keeping it write-only avoids the API
+        # response naming/implying a reachable public path at all. Use
+        # secure_file_url (the authenticated ManualFileView route) instead.
+        extra_kwargs = {"file": {"write_only": True}}
+
+    def get_secure_file_url(self, obj):
+        if not obj.file:
+            return None
+        request = self.context.get("request")
+        url = reverse("api-manual-file", kwargs={"manual_id": obj.id})
+        return request.build_absolute_uri(url) if request else url
 
     def validate(self, attrs):
         uploaded_file = attrs.get("file")
@@ -63,10 +79,10 @@ class CitationSerializer(serializers.ModelSerializer):
         fields = ["id", "manual", "document_id", "revision", "page_number", "excerpt", "score", "manual_file_url"]
 
     def get_manual_file_url(self, obj):
-        request = self.context.get("request")
         if not obj.manual.file:
             return None
-        url = obj.manual.file.url
+        request = self.context.get("request")
+        url = reverse("api-manual-file", kwargs={"manual_id": obj.manual_id})
         return request.build_absolute_uri(url) if request else url
 
 

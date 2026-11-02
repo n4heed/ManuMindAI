@@ -1,3 +1,5 @@
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -94,6 +96,45 @@ class QuestionHistoryView(generics.ListAPIView):
             return qs
         # Engineer (or no profile yet): restricted to their own questions.
         return qs.filter(user=user)
+
+
+class ManualFileView(APIView):
+    """
+    Serves a manual's PDF to any authenticated user. This is the app's
+    *only* route for reading manual files - config/urls.py no longer serves
+    MEDIA_ROOT publicly at all, in any environment.
+
+    Authorization policy: IsAuthenticated only, matching the existing
+    boundary the rest of the app already uses for reading manuals -
+    ManualListCreateView's GET and QuestionHistoryView are both
+    IsAuthenticated-only too, with no per-user manual-ownership
+    restriction anywhere in the data model. There is nothing narrower to
+    inherit here, so nothing narrower is invented here either.
+
+    The manual is always resolved through the database by primary key -
+    the request can never supply a filesystem path, so path traversal
+    through this endpoint is not possible by construction.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, manual_id):
+        manual = get_object_or_404(Manual, pk=manual_id)
+        if not manual.file:
+            raise Http404("No file is available for this manual.")
+        try:
+            file_handle = manual.file.open("rb")
+        except (FileNotFoundError, OSError):
+            # The DB record exists but the file is missing from disk (e.g. a
+            # dev environment with a stale DB). Report it like any other
+            # "not found" - never echo the underlying filesystem path/error.
+            raise Http404("The manual file could not be found.")
+
+        safe_name = "".join(ch for ch in manual.original_filename if ch not in '\r\n"').strip() or "manual.pdf"
+        response = FileResponse(file_handle, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{safe_name}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class WhoAmIView(APIView):
