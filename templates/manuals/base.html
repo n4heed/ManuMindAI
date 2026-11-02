@@ -41,6 +41,48 @@
     const resp = await fetch(url, options);
     return resp;
   }
+
+  // Shared across every dashboard that shows a Question, so the
+  // AI-vs-fallback label and citation rendering never drift out of sync
+  // between the Engineer and Supervisor views.
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  function renderStatusBadge(status) {
+    return status === 'answered'
+      ? '<span class="badge bg-success">Answered</span>'
+      : '<span class="badge status-badge-insufficient text-white">Insufficient evidence</span>';
+  }
+
+  // llm_provider is 'none' for insufficient-evidence questions (no model was
+  // called at all), 'local' for the deterministic extractive fallback, or a
+  // real provider name ('openai'/'anthropic') once one is configured.
+  function renderProviderNote(llmProvider) {
+    if (llmProvider === 'local') {
+      return '<div class="alert alert-warning py-1 px-2 small mb-2">Not AI-generated: this answer is the matching manual text shown directly (no LLM is configured yet). See citations below for the source.</div>';
+    }
+    if (llmProvider && llmProvider !== 'none') {
+      return `<div class="small text-muted mb-2">AI-generated answer (${escapeHtml(llmProvider)}), grounded in the citations below.</div>`;
+    }
+    return '';
+  }
+
+  function renderCitations(citations) {
+    return (citations || []).map(c => `
+      <div class="card citation-card mb-2">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between">
+            <strong>${escapeHtml(c.document_id)} (rev ${escapeHtml(c.revision)}) &mdash; page ${c.page_number}</strong>
+            <span class="text-muted small">score ${c.score.toFixed(2)}</span>
+          </div>
+          <pre class="excerpt mb-1">${escapeHtml(c.excerpt)}</pre>
+          ${c.manual_file_url ? `<a href="${c.manual_file_url}#page=${c.page_number}" target="_blank" class="small">Open PDF at page ${c.page_number}</a>` : ''}
+        </div>
+      </div>`).join('');
+  }
 </script>
 {% block scripts %}{% endblock %}
 </body>

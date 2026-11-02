@@ -40,17 +40,25 @@ function render() {
     area.innerHTML = '<p class="text-muted">No matching questions.</p>';
     return;
   }
-  area.innerHTML = `<table class="table table-sm table-striped align-middle">
-    <thead><tr><th>Asked by</th><th>Machine</th><th>Question</th><th>Status</th><th>When</th></tr></thead>
-    <tbody>${rows.map(q => `
-      <tr>
-        <td>${q.asked_by}</td>
-        <td>${q.machine_id_code}</td>
-        <td>${q.question_text}</td>
-        <td>${q.status === 'answered' ? '<span class="badge bg-success">Answered</span>' : '<span class="badge status-badge-insufficient text-white">Insufficient evidence</span>'}</td>
-        <td>${new Date(q.created_at).toLocaleString()}</td>
-      </tr>`).join('')}</tbody>
-  </table>`;
+  // Card list (not a dense table) so the answer, provider label, and
+  // citations can be shown inline - the same information an Engineer sees
+  // for their own history, since a Supervisor needs to audit it, not just
+  // see a status badge.
+  area.innerHTML = rows.map(q => `
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h6 class="mb-0">${escapeHtml(q.question_text)}</h6>
+            <div class="text-muted small">${escapeHtml(q.asked_by)} &middot; ${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
+          </div>
+          ${renderStatusBadge(q.status)}
+        </div>
+        ${renderProviderNote(q.llm_provider)}
+        <p class="mb-2">${escapeHtml(q.answer_text)}</p>
+        ${renderCitations(q.citations)}
+      </div>
+    </div>`).join('');
 }
 
 async function loadHistory() {

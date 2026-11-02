@@ -141,9 +141,16 @@ def ingest_manual(manual: Manual) -> None:
     try:
         pages = extract_pages(manual.file.path)
     except IngestionError as exc:
+        # A failed (re-)ingestion must not leave this manual's *previous*
+        # successful extraction looking current: drop its old pages/chunks
+        # and page_count, so a "failed" manual never has stale content that
+        # could still be silently retrieved. Found via a real-PDF test.
+        manual.pages.all().delete()
         manual.status = Manual.Status.FAILED
         manual.error_message = str(exc)
-        manual.save(update_fields=["status", "error_message"])
+        manual.page_count = 0
+        manual.processed_at = None
+        manual.save(update_fields=["status", "error_message", "page_count", "processed_at"])
         return
 
     manual.pages.all().delete()  # re-ingestion: replace, don't duplicate

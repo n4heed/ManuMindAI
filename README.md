@@ -121,6 +121,30 @@ corpus:
 `.env`, not a magic number buried in code, so it can be re-tuned if a different embedding
 provider changes the score distribution.
 
+### What the citation "score" is - and is not
+
+The number shown next to each citation (e.g. "score 0.43") is **cosine similarity between the
+question's and the passage's term-frequency vectors** - a measure of *how much vocabulary the
+question and the passage share*, normalized to [0, 1] for this provider (it can range further
+negative/positive for other embedding providers, since cosine similarity's mathematical range is
+[-1, 1]; this implementation's non-negative term-count vectors just never produce a negative
+score). Concretely:
+
+- It is **not** a probability or confidence level. A score of 0.43 does not mean "43% likely to
+  be correct" or "43% confident" - there is no calibration step that would make that claim
+  meaningful, and we have not built one.
+- It is **not semantic similarity**. With the `local` provider (current default - see section 3),
+  two passages about the same concept in different words (e.g. "pressure" vs. "PSI", or "the
+  machine stopped" vs. "operation halted") score 0 if they share no literal terms. The light
+  stemming added in this milestone only bridges exact word-form differences (e.g.
+  "checked"/"check"), not synonyms or paraphrases.
+- It **is** useful for relative ranking within one question: a higher score means more shared,
+  meaningful vocabulary with the question, which is exactly what the threshold and top-K cutoff
+  rely on. Treat it as "how lexically relevant", not "how right."
+- Switching to a real embedding provider (`openai`) would produce an actual semantic-similarity
+  score from a trained model, which is a materially different number with its own distribution -
+  `RAG_SIMILARITY_THRESHOLD` would need to be re-measured for that provider rather than reused.
+
 ## 4. Known limitations (honest, as of this report)
 
 - **PyMuPDF was blocked by Windows Smart App Control on the dev machine for part of this
@@ -128,20 +152,32 @@ provider changes the score distribution.
   It resolved itself once Windows finished an async reputation check (confirmed working:
   successfully extracted and ingested all three official sample PDFs, 3 pages each). The `fitz`
   import is lazy (`manuals/services.py: extract_pages`) specifically so the rest of the app
-  (server, API, UI, 32 of 36 tests) stays usable even if this blocks again on another machine;
+  (server, API, UI, most tests) stays usable even if this blocks again on another machine;
   ingestion itself would show `status: failed` with a clear error rather than crashing.
 - **`local` LLM provider output is extractive, not fluent.** It quotes retrieved sentences
   rather than synthesizing prose. Occasionally produces a near-duplicate sentence when chunk
   overlap causes the same fact to appear in two adjacent chunks. This goes away entirely once
-  a real `openai`/`anthropic` key is configured.
+  a real `openai`/`anthropic` key is configured. The UI labels this clearly (a yellow
+  "Not AI-generated" banner) on every dashboard that shows an answer.
 - **No OCR.** Scanned/image-only PDFs are explicitly out of scope per the brief and are
-  rejected with a clear "no extractable text" error rather than silently producing nothing.
+  rejected with a clear "no extractable text" error (verified against a real generated
+  image-only PDF, not just a mock) rather than silently producing nothing or falsely claiming
+  OCR support.
 - **Synchronous ingestion.** Given three short PDFs (~3 pages each), ingestion runs in the
   request/response cycle (a few seconds) rather than via Celery/Redis, which the brief does not
   require for Phase 1.
 - **No password reset / registration flow.** Accounts and roles are created via
   `seed_demo_users` or Django admin, matching "Django admin may be used for administration"
   in the official brief.
+- **Citation/relevance score is lexical, not semantic** - see "What the citation 'score' is -
+  and is not" above. This is the most significant quality limitation until a real embedding
+  provider is configured.
+- **Fixed, found and corrected in this milestone**: a failed *re-ingestion* of a manual used to
+  leave the previous successful ingestion's pages/chunks in the database untouched (only
+  `status` flipped to `failed`), so stale content could still be silently retrieved under a
+  manual that looked broken in the UI. Found via a real-PDF test (`test_real_pdf_ingestion.py`),
+  not a mock. Fixed in `manuals/services.py: ingest_manual` - a failed (re-)ingestion now always
+  clears that manual's pages/chunks/page_count.
 
 ## 5. Requirements compliance matrix
 
@@ -166,11 +202,15 @@ provider changes the score distribution.
 .venv\Scripts\python.exe manage.py test manuals
 ```
 
-**36/36 passing** (last run: see milestone report). Covers: chunking edge cases, embedding
-determinism and true/false-match separation, PDF-extraction failure modes (missing PyMuPDF,
-bad file, empty file, oversized file), ingestion success/failure/re-ingestion, RAG abstention,
-machine isolation (both at the retrieval layer and end-to-end through `answer_question`),
-and all role-based API permission/isolation checks.
+**57/57 passing** (last run: see milestone report). Covers: chunking edge cases, embedding
+determinism and true/false-match separation (including light stemming), ingestion
+success/failure/re-ingestion (both mocked for speed AND against real temporary PDF files -
+valid, corrupt, encrypted, and image-only, built with PyMuPDF itself - see
+`tests/test_real_pdf_ingestion.py` and `tests/pdf_fixtures.py`), RAG abstention, machine
+isolation (retrieval layer, end-to-end, and the "identical alarm code means something different
+on each machine" scenario in `tests/test_retrieval_regression.py`), citation-to-chunk accuracy,
+per-page citation dedup, chunk-boundary word-safety, retrieval threshold/top-K edge cases, and
+all role-based API permission/isolation checks.
 
 ## 7. Demo script (maps to the official checklist)
 

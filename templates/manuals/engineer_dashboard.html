@@ -35,36 +35,17 @@ async function loadMachines() {
 }
 
 function renderQuestion(q) {
-  const statusBadge = q.status === 'answered'
-    ? '<span class="badge bg-success">Answered</span>'
-    : '<span class="badge status-badge-insufficient text-white">Insufficient evidence</span>';
-  const citations = (q.citations || []).map(c => `
-    <div class="card citation-card mb-2">
-      <div class="card-body py-2">
-        <div class="d-flex justify-content-between">
-          <strong>${c.document_id} (rev ${c.revision}) &mdash; page ${c.page_number}</strong>
-          <span class="text-muted small">score ${c.score.toFixed(2)}</span>
-        </div>
-        <pre class="excerpt mb-1">${c.excerpt}</pre>
-        ${c.manual_file_url ? `<a href="${c.manual_file_url}#page=${c.page_number}" target="_blank" class="small">Open PDF at page ${c.page_number}</a>` : ''}
-      </div>
-    </div>`).join('');
-  const providerNote = q.llm_provider === 'local'
-    ? '<div class="alert alert-warning py-1 px-2 small mb-2">Not AI-generated: this answer is the matching manual text shown directly (no LLM is configured yet). See citations below for the source.</div>'
-    : (q.llm_provider && q.llm_provider !== 'none'
-        ? `<div class="small text-muted mb-2">AI-generated answer (${q.llm_provider}), grounded in the citations below.</div>`
-        : '');
   return `
     <div class="card shadow-sm mb-3">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start">
-          <h6 class="mb-1">${q.question_text}</h6>
-          ${statusBadge}
+          <h6 class="mb-1">${escapeHtml(q.question_text)}</h6>
+          ${renderStatusBadge(q.status)}
         </div>
-        ${providerNote}
-        <p class="mb-2">${q.answer_text}</p>
-        ${citations}
-        <div class="text-muted small">${q.machine_id_code} &middot; ${new Date(q.created_at).toLocaleString()}</div>
+        ${renderProviderNote(q.llm_provider)}
+        <p class="mb-2">${escapeHtml(q.answer_text)}</p>
+        ${renderCitations(q.citations)}
+        <div class="text-muted small">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
       </div>
     </div>`;
 }
