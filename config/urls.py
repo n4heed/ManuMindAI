@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
 
 from manuals.forms import BootstrapAuthenticationForm
 
@@ -14,6 +16,9 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('', include('manuals.urls')),
 ]
+
+if settings.DEBUG and settings.STATICFILES_DIRS:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATICFILES_DIRS[0])
 
 # No public URL ever serves MEDIA_ROOT, in any environment - manual PDFs are
 # only readable through the authenticated ManualFileView (manuals/views_api.py),

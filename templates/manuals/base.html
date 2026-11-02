@@ -6,45 +6,69 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Manufacturing Manual Assistant{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="{% static 'css/flat.css' %}" rel="stylesheet">
 </head>
-<body>
-<div class="app-shell">
-  <aside class="app-sidebar" aria-label="Primary navigation">
-    <a class="brand" href="{% url 'dashboard' %}">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <rect x="3" y="3" width="18" height="18" rx="4" fill="#2563EB"/>
-        <path d="M7 12h4M7 16h7M7 8h10" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/>
-      </svg>
-      <span>ManuMindAI</span>
-    </a>
-    <nav class="app-nav">
-      <a class="app-nav-link active" href="{% url 'dashboard' %}" aria-current="page">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 13h6V4H4v9ZM4 20h6v-5H4v5ZM14 20h6V11h-6v9ZM14 4v5h6V4h-6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-        Dashboard
-      </a>
-    </nav>
-    <div class="app-sidebar-footer">
-      Manufacturing Manual Assistant<br>Flat Design 2.0
-    </div>
-  </aside>
+<body class="app-body">
 
-  <div class="app-main">
-    <header class="app-topbar">
-      <h1>{% block page_title %}Dashboard{% endblock %}</h1>
-      <div class="d-flex align-items-center gap-3">
-        <span class="role-pill">{{ user.username }} &middot; {{ user.profile.get_role_display|default:"No role" }}</span>
-        <form action="{% url 'logout' %}" method="post" class="d-inline m-0">
-          {% csrf_token %}
-          <button class="btn btn-outline-secondary btn-sm" type="submit">Log out</button>
-        </form>
+<!-- Dark Navy Top Navigation Bar -->
+<header class="app-top-nav" aria-label="Primary navigation">
+  <div class="top-nav-container">
+    <!-- Brand / Portal Title -->
+    <a class="nav-brand" href="{% url 'dashboard' %}">
+      <div class="nav-brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="2" y="2" width="20" height="20" rx="5" fill="#2563EB"/>
+          <path d="M7 12h10M7 8h6M7 16h8" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="17" cy="8" r="1.2" fill="#FFFFFF"/>
+          <circle cx="19" cy="16" r="1.2" fill="#FFFFFF"/>
+        </svg>
       </div>
-    </header>
-    <main class="app-content">
-      {% block content %}{% endblock %}
-    </main>
+      <div class="nav-brand-text">
+        <span class="nav-brand-title">Manufacturing Manual Assistant</span>
+        <span class="nav-brand-subtitle">
+          {% if user.profile.role == 'admin' %}ADMINISTRATOR PORTAL
+          {% elif user.profile.role == 'supervisor' %}SUPERVISOR AUDIT PORTAL
+          {% else %}ENGINEER ASSISTANT PORTAL{% endif %}
+        </span>
+      </div>
+    </a>
+
+    <!-- Center Equipment Selection Pills -->
+    <div class="nav-equipment-bar" id="top-equipment-bar" aria-label="Target equipment selector">
+      <!-- Populated by JavaScript with active/inactive machine buttons -->
+    </div>
+
+    <!-- Right User Meta & Actions -->
+    <div class="nav-actions">
+      <div class="user-role-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span>{{ user.profile.get_role_display|default:user.username }} ({{ user.username }})</span>
+      </div>
+      <form action="{% url 'logout' %}" method="post" class="d-inline m-0">
+        {% csrf_token %}
+        <button class="nav-btn-signout" type="submit" title="Sign out of portal">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span>Sign Out</span>
+        </button>
+      </form>
+    </div>
   </div>
-</div>
+</header>
+
+<!-- Main Workspace Canvas -->
+<main class="app-workspace-container">
+  {% block content %}{% endblock %}
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -52,6 +76,7 @@
     const match = document.cookie.match(/csrftoken=([^;]+)/);
     return match ? match[1] : '';
   }
+
   async function apiFetch(url, options = {}) {
     options.headers = Object.assign({'X-CSRFToken': getCsrfToken()}, options.headers || {});
     options.credentials = 'same-origin';
@@ -59,9 +84,6 @@
     return resp;
   }
 
-  // Shared across every dashboard that shows a Question, so the
-  // AI-vs-fallback label and citation rendering never drift out of sync
-  // between the Engineer and Supervisor views.
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -74,9 +96,6 @@
       : '<span class="status-pill status-pill-neutral">Insufficient evidence</span>';
   }
 
-  // llm_provider is 'none' for insufficient-evidence questions (no model was
-  // called at all), 'local' for the deterministic extractive fallback, or a
-  // real provider name ('openai'/'anthropic') once one is configured.
   function renderProviderNote(llmProvider) {
     if (llmProvider === 'local') {
       return '<div class="flat-alert flat-alert-warning mb-2"><span>Local extractive answer &mdash; not AI-generated. This is the matching manual text shown directly (no LLM is configured). See citations below for the source.</span></div>';
@@ -98,15 +117,10 @@
         ${c.quote ? `<div class="small fw-semibold mt-1" style="color: var(--color-text);">Exact supporting quote:</div><pre class="excerpt mb-1">${escapeHtml(c.quote)}</pre>` : `<pre class="excerpt mb-1">${escapeHtml(c.excerpt)}</pre>`}
         ${c.manual_deleted
           ? '<span class="small text-muted-strong">Source manual deleted &mdash; PDF no longer available.</span>'
-          : (c.manual_file_url ? `<a href="${encodeURI(c.manual_file_url)}#page=${c.page_number}" target="_blank" rel="noopener" class="small">Open PDF at page ${c.page_number} &rarr;</a>` : '')}
+          : (c.manual_file_url ? `<a href="${encodeURI(c.manual_file_url)}#page=${c.page_number}" target="_blank" rel="noopener" class="small citation-link">Open PDF at page ${c.page_number} &rarr;</a>` : '')}
       </div>`).join('') + `</div>`;
   }
 
-  // Dual-Answer RAG (structured): one block per validated claim, each with
-  // only its own supporting citations - never one citation list for an
-  // entire multi-part answer. A claim only exists here if the backend
-  // confirmed at least one source's exact quote really appears in that
-  // source's chunk (manuals/rag/pipeline.py: _validate_claims).
   function renderGroqClaims(claims) {
     if (!claims || !claims.length) return '';
     return claims.map(claim => `
@@ -116,10 +130,6 @@
       </div>`).join('');
   }
 
-  // Dual-Answer RAG: shared by the Engineer and Supervisor dashboards so the
-  // two answer cards never drift out of sync between the two views. `q` is
-  // a Question API object; `q.answers.rag_only` / `q.answers.rag_groq` are
-  // the two independent answers (see manuals/serializers.py QuestionSerializer).
   function renderGroqStatusBadge(status) {
     const map = {
       completed: '<span class="status-pill status-pill-success">Answered</span>',
@@ -138,7 +148,7 @@
     const ragOnlyCard = `
       <div class="flat-card answer-card">
         <div class="flat-card-body">
-          <div class="d-flex justify-content-between align-items-start mb-1 gap-2">
+          <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
             <div>
               <div class="answer-card-label">RAG-ONLY</div>
               <div class="answer-card-desc">Generated using retrieved manufacturing manual passages without an LLM.</div>
@@ -158,10 +168,8 @@
         <div class="small text-muted-strong mb-2">Model: ${escapeHtml(groq.model || 'unknown')}${groq.generation_time_ms != null ? ' &middot; ' + groq.generation_time_ms + ' ms' : ''}</div>
         <div class="flat-alert flat-alert-neutral mb-2"><span>AI-generated answer. Each statement below is grounded in its own cited, quote-verified source. The similarity score is a lexical ranking signal, not a calibrated confidence value.</span></div>`;
       if (groq.claims && groq.claims.length) {
-        // Structured-output answer: one block per claim, each with only its own sources.
         groqBody = header + `<div class="answer-panel">${renderGroqClaims(groq.claims)}</div>`;
       } else {
-        // Legacy (pre-structured-output) answer: a single flat answer with one citation list.
         groqBody = header + `
           <div class="answer-panel mb-2"><div class="answer-text">${escapeHtml(groq.answer || '')}</div></div>
           ${groq.citations && groq.citations.length ? '<div class="text-muted-strong small fw-semibold mb-1">Sources</div>' : ''}
@@ -178,7 +186,7 @@
     const groqCard = `
       <div class="flat-card answer-card">
         <div class="flat-card-body">
-          <div class="d-flex justify-content-between align-items-start mb-1 gap-2">
+          <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
             <div>
               <div class="answer-card-label">RAG + GROQ AI</div>
               <div class="answer-card-desc">Generated by Groq using retrieved manufacturing manual passages.</div>

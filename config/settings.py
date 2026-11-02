@@ -21,7 +21,7 @@ SECRET_KEY = env('DJANGO_SECRET_KEY', _INSECURE_DEFAULT_SECRET_KEY)
 
 DEBUG = env('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = [h.strip() for h in env('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
+ALLOWED_HOSTS = ['*'] if DEBUG else [h.strip() for h in env('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
 
 if not DEBUG:
     # Fail fast rather than silently deploying with the checked-in dev key.
@@ -107,7 +107,7 @@ USE_I18N = True
 USE_TZ = True
 
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = '/media/'

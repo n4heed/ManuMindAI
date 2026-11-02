@@ -1,390 +1,678 @@
 {% extends "manuals/base.html" %}
-{% block title %}Engineer Dashboard{% endblock %}
-{% block page_title %}Ask the Manual Assistant{% endblock %}
+{% block title %}Engineer Assistant &mdash; Manufacturing Manual Assistant{% endblock %}
 {% block content %}
 
-<div class="tab-nav" role="tablist" aria-label="Engineer dashboard sections">
-  <button type="button" class="tab-button active" role="tab" id="tab-home" aria-selected="true" aria-controls="panel-home">Home</button>
-  <button type="button" class="tab-button" role="tab" id="tab-history" aria-selected="false" tabindex="-1" aria-controls="panel-history">Question History</button>
-</div>
+<div class="row g-4">
+  <!-- Left Column: Active Equipment & Supplied Manuals Sidebar -->
+  <div class="col-lg-4 col-xl-4">
+    <div class="equipment-sidebar-card">
+      <div class="sidebar-card-body">
+        <!-- Active Equipment Heading -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="sidebar-section-label">ACTIVE EQUIPMENT</div>
+          <span class="badge-indexed">
+            <span class="indexed-dot"></span>
+            Indexed
+          </span>
+        </div>
 
-<div id="panel-home" role="tabpanel" aria-labelledby="tab-home">
-  <div class="flat-card mb-4">
-    <div class="flat-card-body">
-      <form id="ask-form" novalidate>
-        <div class="mb-3">
-          <label class="form-label" for="machine-select">Machine</label>
-          <select class="form-select" name="machine" id="machine-select" required aria-describedby="machine-select-help"></select>
-          <div id="machine-select-help" class="form-text text-muted-strong">The answer is restricted to this machine's own manuals.</div>
+        <!-- Machine Meta -->
+        <div class="active-machine-box mb-4">
+          <div class="machine-id-pill" id="sidebar-machine-id">&ndash;</div>
+          <h2 class="sidebar-machine-title" id="sidebar-machine-name">Loading equipment&hellip;</h2>
+          <p class="sidebar-machine-desc" id="sidebar-machine-model">&ndash;</p>
         </div>
-        <div class="mb-3" id="recommended-questions-area" aria-live="polite"></div>
-        <div class="mb-3">
-          <label class="form-label" for="question-text">Maintenance question</label>
-          <textarea class="form-control" id="question-text" name="question_text" rows="2" placeholder="e.g. What does E17 mean?" required></textarea>
-        </div>
-        <button class="btn btn-primary" type="submit" id="ask-submit">Ask</button>
-      </form>
-    </div>
-  </div>
 
-  <div id="home-answer-area" aria-live="polite">
-    <div class="empty-state">Ask a question above to see the RAG-only and Groq AI answers here.</div>
-  </div>
-</div>
+        <hr class="sidebar-divider">
 
-<div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
-  <div class="flat-card mb-3">
-    <div class="flat-card-body">
-      <div class="filter-toolbar">
-        <div class="filter-field">
-          <label for="filter-search">Search</label>
-          <input type="search" class="form-control form-control-sm" id="filter-search" placeholder="Question or machine&hellip;">
+        <!-- Supplied Manuals Section -->
+        <div class="mb-4">
+          <div class="sidebar-section-label mb-2" id="sidebar-manuals-heading">SUPPLIED MANUALS:</div>
+          <div id="sidebar-manuals-list" class="d-flex flex-column gap-2">
+            <div class="text-muted-strong small">Loading manuals&hellip;</div>
+          </div>
         </div>
-        <div class="filter-field">
-          <label for="filter-machine">Machine</label>
-          <select class="form-select form-select-sm" id="filter-machine">
-            <option value="">All machines</option>
-          </select>
+
+        <hr class="sidebar-divider">
+
+        <!-- Training Dataset Notice -->
+        <div class="notice-card mb-3">
+          <div class="notice-header">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <span class="notice-title">Training Dataset Notice</span>
+          </div>
+          <p class="notice-text">
+            Fictional equipment and specifications created solely for this hackathon. These documents are a closed demonstration dataset and must not be used to operate or maintain real equipment.
+          </p>
         </div>
-        <div class="filter-field">
-          <label for="filter-status">Status</label>
-          <select class="form-select form-select-sm" id="filter-status">
-            <option value="">All statuses</option>
-            <option value="both_completed">Both answers completed</option>
-            <option value="rag_completed">RAG-only completed</option>
-            <option value="groq_completed">Groq completed</option>
-            <option value="groq_failed">Groq failed</option>
-            <option value="insufficient_evidence">Insufficient evidence</option>
-            <option value="groq_unavailable">Groq unavailable</option>
-          </select>
-        </div>
-        <div class="filter-field">
-          <label for="filter-sort">Sort</label>
-          <select class="form-select form-select-sm" id="filter-sort">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-          </select>
-        </div>
-        <div class="filter-field">
-          <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="filter-clear">Clear filters</button>
+
+        <!-- Anti-Hallucination Controls -->
+        <div class="compliance-card">
+          <div class="compliance-header">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <polyline points="9 12 11 14 15 10"/>
+            </svg>
+            <span class="compliance-title">Anti-Hallucination Controls</span>
+          </div>
+          <div class="compliance-checklist">
+            <div class="compliance-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Machine-isolated vector retrieval</span>
+            </div>
+            <div class="compliance-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Grounded citation validation</span>
+            </div>
+            <div class="compliance-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Verbatim quote substring verification</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="filter-result-count mt-2" id="filter-result-count"></div>
     </div>
   </div>
 
-  <div id="history-list-area"><div class="empty-state">Loading&hellip;</div></div>
-  <div id="history-detail-area" hidden></div>
+  <!-- Right Column: Main Workspace (Tabs: Ask Assistant & Query History) -->
+  <div class="col-lg-8 col-xl-8">
+    <!-- Workspace Navigation Tabs -->
+    <div class="workspace-tab-nav" role="tablist">
+      <button type="button" class="workspace-tab-btn active" role="tab" id="tab-ask" aria-selected="true" aria-controls="panel-ask">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Ask Assistant
+      </button>
+      <button type="button" class="workspace-tab-btn" role="tab" id="tab-history" aria-selected="false" aria-controls="panel-history">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Query History
+      </button>
+    </div>
+
+    <!-- PANEL 1: ASK ASSISTANT -->
+    <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask">
+      <!-- Main Question Input Card -->
+      <div class="flat-card mb-4">
+        <div class="flat-card-body p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+              <div class="icon-bubble-blue">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+              </div>
+              <h2 class="workspace-card-title mb-0">Ask Maintenance Manual Assistant</h2>
+            </div>
+            <span class="active-target-badge" id="active-target-badge">
+              Active Target: Loading&hellip;
+            </span>
+          </div>
+
+          <form id="ask-form" novalidate>
+            <!-- Hidden real machine select kept for form submission -->
+            <input type="hidden" name="machine" id="machine-id-input">
+
+            <div class="question-input-wrapper mb-3">
+              <textarea class="form-control question-textarea" id="question-text" name="question_text" rows="3" placeholder="Ask any operational, safety, or maintenance question about the active equipment..." required></textarea>
+              <div class="question-input-footer">
+                <span class="text-hint">Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to search manuals</span>
+                <button class="btn btn-primary btn-ask" type="submit" id="ask-submit">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <span>Ask Assistant</span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <!-- Verified Recommended Questions -->
+          <div id="recommended-questions-container" class="mt-3" style="display: none;">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span class="verified-questions-heading" id="verified-questions-heading">VERIFIED QUESTIONS (GROUNDED IN MANUALS):</span>
+            </div>
+            <div class="verified-questions-list" id="recommended-questions-list">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assistant Answer Area -->
+      <div id="home-answer-area" aria-live="polite">
+        <div class="ready-empty-state">
+          <div class="ready-icon-bubble">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="1.75">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+          </div>
+          <h3 class="ready-title">Grounded Manual Assistant Ready</h3>
+          <p class="ready-subtitle">Select target equipment and ask any operational, troubleshooting, or safety question to receive verified passages and AI synthesis.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 2: QUERY HISTORY -->
+    <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <div class="flat-card mb-4">
+        <div class="flat-card-body p-4">
+          <!-- History Header -->
+          <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+            <div>
+              <div class="d-flex align-items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <h2 class="workspace-card-title mb-0">Engineer Query History</h2>
+              </div>
+              <p class="text-muted-strong small mb-0 mt-1">Session records of maintenance inquiries, target equipment, and verified manual citations.</p>
+            </div>
+            <div class="filter-result-count" id="filter-result-count">Showing 0 of 0 queries</div>
+          </div>
+
+          <!-- History Filter Pills -->
+          <div class="history-pill-filters mb-3" id="history-pills-bar">
+            <span class="pill-filter-label">Filter:</span>
+            <button type="button" class="history-pill active" data-filter-type="all">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              All (<span id="count-all">0</span>)
+            </button>
+            <span id="machine-filter-pills" class="d-inline-flex gap-1 flex-wrap"></span>
+            <button type="button" class="history-pill" data-filter-type="status" data-filter-val="answered">
+              Answered (<span id="count-answered">0</span>)
+            </button>
+            <button type="button" class="history-pill" data-filter-type="status" data-filter-val="insufficient_evidence">
+              Insufficient Evidence (<span id="count-unanswered">0</span>)
+            </button>
+          </div>
+
+          <!-- Search & Sort Row -->
+          <div class="row g-2 align-items-center">
+            <div class="col-sm-7 col-md-8">
+              <div class="input-icon-group">
+                <span class="input-icon-left">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </span>
+                <input type="search" class="form-control form-control-sm" id="filter-search" placeholder="Search queries by keywords, code, or machine&hellip;">
+              </div>
+            </div>
+            <div class="col-sm-5 col-md-4">
+              <select class="form-select form-select-sm" id="filter-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- History Queries List -->
+      <div id="history-list-area">
+        <div class="ready-empty-state">
+          <div class="ready-icon-bubble">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="1.75">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <h3 class="ready-title">No Queries in Session</h3>
+          <p class="ready-subtitle">Inquiries submitted in the Ask Assistant tab will be recorded here with timestamps, target equipment, and verified manual citations.</p>
+          <button type="button" class="btn btn-primary btn-sm mt-2" onclick="switchToAskTab()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Start an Inquiry in Assistant
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+let machinesCache = [];
+let activeMachine = null;
 let historyQuestions = [];
 let filteredQuestions = [];
-let historyLoaded = false;
-let machinesCache = [];
+let activeFilter = { type: 'all', val: null };
+
+// ---- Tab Switching ----
+const tabAsk = document.getElementById('tab-ask');
+const tabHistory = document.getElementById('tab-history');
+const panelAsk = document.getElementById('panel-ask');
+const panelHistory = document.getElementById('panel-history');
+
+function switchToAskTab() {
+  tabAsk.classList.add('active');
+  tabAsk.setAttribute('aria-selected', 'true');
+  tabHistory.classList.remove('active');
+  tabHistory.setAttribute('aria-selected', 'false');
+  panelAsk.hidden = false;
+  panelHistory.hidden = true;
+}
+
+function switchToHistoryTab() {
+  tabHistory.classList.add('active');
+  tabHistory.setAttribute('aria-selected', 'true');
+  tabAsk.classList.remove('active');
+  tabAsk.setAttribute('aria-selected', 'false');
+  panelHistory.hidden = false;
+  panelAsk.hidden = true;
+  loadHistory();
+}
+
+tabAsk.addEventListener('click', switchToAskTab);
+tabHistory.addEventListener('click', switchToHistoryTab);
+
+// ---- Machine Management & Top Nav Selector ----
 
 async function loadMachines() {
-  const resp = await apiFetch('/api/machines/');
-  machinesCache = await resp.json();
-  // The ask-form only ever offers ACTIVE machines - an archived machine no
-  // longer accepts new questions (also enforced server-side, see
-  // AskQuestionSerializer). The history filter still lists every machine,
-  // including archived ones, since past questions may reference them.
-  const activeMachines = machinesCache.filter(m => !m.is_archived);
-  const activeOptions = activeMachines.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
-  const allOptions = machinesCache.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}${m.is_archived ? ' (archived)' : ''}</option>`).join('');
-  document.getElementById('machine-select').innerHTML = activeOptions;
-  document.getElementById('filter-machine').innerHTML = '<option value="">All machines</option>' + allOptions;
-  if (activeMachines.length) {
-    loadRecommendedQuestions(document.getElementById('machine-select').value);
+  try {
+    const resp = await apiFetch('/api/machines/');
+    if (!resp.ok) return;
+    machinesCache = await resp.json();
+
+    const activeMachines = machinesCache.filter(m => !m.is_archived);
+    if (!activeMachines.length) return;
+
+    // Default to first active machine if none set
+    if (!activeMachine || !activeMachines.some(m => m.id === activeMachine.id)) {
+      activeMachine = activeMachines[0];
+    }
+
+    renderTopNavEquipmentButtons(activeMachines);
+    updateActiveEquipmentDisplay();
+  } catch (err) {
+    console.error('Failed to load machines:', err);
   }
 }
 
-// --- Recommended questions: deterministic, backend-generated, no LLM call ---
+function renderTopNavEquipmentButtons(activeMachines) {
+  const bar = document.getElementById('top-equipment-bar');
+  if (!bar) return;
 
-async function loadRecommendedQuestions(machineId) {
-  const area = document.getElementById('recommended-questions-area');
-  if (!machineId) {
-    area.innerHTML = '';
-    return;
-  }
-  area.innerHTML = '<div class="recommend-label">Recommended questions</div><div class="text-muted-strong small">Loading suggestions&hellip;</div>';
-  let questions = [];
-  try {
-    const resp = await apiFetch(`/api/machines/${machineId}/recommended-questions/`);
-    if (resp.ok) {
-      const body = await resp.json();
-      questions = body.questions || [];
-    }
-  } catch (err) {
-    area.innerHTML = '';
-    return;
-  }
-  const machine = machinesCache.find(m => String(m.id) === String(machineId));
-  const machineLabel = machine ? machine.machine_id : '';
-  if (!questions.length) {
-    area.innerHTML = `
-      <div class="recommend-label">Recommended questions${machineLabel ? ' for ' + escapeHtml(machineLabel) : ''}</div>
-      <div class="text-muted-strong small">No recommended questions available for this machine yet. Upload and process its manuals to get suggestions.</div>`;
-    return;
-  }
-  area.innerHTML = `
-    <div class="recommend-label">Recommended questions${machineLabel ? ' for ' + escapeHtml(machineLabel) : ''}</div>
-    <div class="recommend-chips">
-      ${questions.map(q => `<button type="button" class="recommend-chip">${escapeHtml(q)}</button>`).join('')}
-    </div>`;
-  area.querySelectorAll('.recommend-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const textarea = document.getElementById('question-text');
-      textarea.value = btn.textContent;
-      textarea.focus();
-      // Populates the field for the Engineer to review/edit - never submits
-      // automatically, and never changes the machine selection.
+  bar.innerHTML = activeMachines.map(m => {
+    const isActive = activeMachine && activeMachine.id === m.id;
+    return `
+      <button type="button" class="nav-equipment-pill ${isActive ? 'active' : ''}" data-machine-id="${m.id}" title="${escapeHtml(m.name)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>${escapeHtml(m.model || m.machine_id)} (${escapeHtml(m.machine_id)})</span>
+      </button>
+    `;
+  }).join('');
+
+  bar.querySelectorAll('.nav-equipment-pill').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const mid = parseInt(this.getAttribute('data-machine-id'), 10);
+      const chosen = machinesCache.find(m => m.id === mid);
+      if (chosen && chosen.id !== activeMachine.id) {
+        selectMachine(chosen);
+      }
     });
   });
 }
 
-function renderQuestion(q) {
-  return `
-    <div class="mb-4">
-      <div class="text-muted-strong small mb-1">Answered for <strong style="color: var(--color-text);">${escapeHtml(q.machine_id_code)}</strong> &middot; ${new Date(q.created_at).toLocaleString()}</div>
-      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-        <h3 class="h6 mb-0">${escapeHtml(q.question_text)}</h3>
+function selectMachine(m) {
+  activeMachine = m;
+  const activeMachines = machinesCache.filter(item => !item.is_archived);
+  renderTopNavEquipmentButtons(activeMachines);
+  updateActiveEquipmentDisplay();
+  // Clear any existing answer from another machine to enforce visual isolation
+  document.getElementById('home-answer-area').innerHTML = `
+    <div class="ready-empty-state">
+      <div class="ready-icon-bubble">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="1.75">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
       </div>
-      ${renderDualAnswers(q)}
-    </div>`;
+      <h3 class="ready-title">Grounded Manual Assistant Ready</h3>
+      <p class="ready-subtitle">Target switched to ${escapeHtml(m.model || m.machine_id)}. Ask any maintenance, safety, or operational question to retrieve verified manual passages.</p>
+    </div>
+  `;
 }
 
-// --- Tabs ------------------------------------------------------------
+function updateActiveEquipmentDisplay() {
+  if (!activeMachine) return;
 
-const TAB_ORDER = ['tab-home', 'tab-history'];
+  // Sidebar updates
+  document.getElementById('sidebar-machine-id').textContent = activeMachine.machine_id;
+  document.getElementById('sidebar-machine-name').textContent = activeMachine.name || activeMachine.model;
+  document.getElementById('sidebar-machine-model').textContent = activeMachine.model || 'Standard Industrial Unit';
 
-function activateTab(tabId) {
-  const config = {'tab-home': 'panel-home', 'tab-history': 'panel-history'};
-  Object.entries(config).forEach(([btnId, panelId]) => {
-    const isActive = btnId === tabId;
-    const btn = document.getElementById(btnId);
-    const panel = document.getElementById(panelId);
-    btn.classList.toggle('active', isActive);
-    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    btn.tabIndex = isActive ? 0 : -1;
-    panel.hidden = !isActive;
-  });
-  if (tabId === 'tab-history' && !historyLoaded) {
-    loadHistory();
+  // Form & Badge updates
+  document.getElementById('machine-id-input').value = activeMachine.id;
+  document.getElementById('active-target-badge').textContent = `Active Target: ${activeMachine.model || activeMachine.machine_id} (${activeMachine.machine_id})`;
+  document.getElementById('question-text').placeholder = `Ask any operational, safety, or maintenance question about ${activeMachine.model || activeMachine.machine_id} (${activeMachine.machine_id})...`;
+
+  // Fetch actual manuals and verified recommendations for this active machine
+  loadActiveMachineManuals(activeMachine.id);
+  loadRecommendedQuestions(activeMachine.id);
+}
+
+// ---- Load Real Supplied Manuals for Sidebar ----
+
+async function loadActiveMachineManuals(machineId) {
+  const container = document.getElementById('sidebar-manuals-list');
+  const heading = document.getElementById('sidebar-manuals-heading');
+  try {
+    const resp = await apiFetch(`/api/manuals/?machine=${machineId}`);
+    if (!resp.ok) {
+      container.innerHTML = '<div class="text-muted-strong small">No manuals available.</div>';
+      return;
+    }
+    const manuals = await resp.json();
+    heading.textContent = `SUPPLIED CHALLENGE MANUALS (${manuals.length}):`;
+
+    if (!manuals.length) {
+      container.innerHTML = '<div class="text-muted small">No manuals registered for this equipment.</div>';
+      return;
+    }
+
+    container.innerHTML = manuals.map(m => {
+      const displayName = m.original_filename || `${m.document_id}.pdf`;
+      return `
+        <div class="sidebar-manual-card">
+          <div class="d-flex align-items-start gap-2">
+            <div class="manual-file-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+            </div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="manual-card-filename text-truncate" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div>
+              <div class="manual-card-meta">Doc ID: ${escapeHtml(m.document_id)} &bull; Rev ${escapeHtml(m.revision)} &bull; ${m.page_count} pages</div>
+            </div>
+            ${m.secure_file_url ? `
+              <a href="${encodeURI(m.secure_file_url)}#page=1" target="_blank" rel="noopener" class="btn-manual-open" title="Open PDF">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                <span>Open PDF</span>
+              </a>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="text-muted-strong small">Failed to load manuals.</div>';
   }
 }
 
-document.getElementById('tab-home').addEventListener('click', () => activateTab('tab-home'));
-document.getElementById('tab-history').addEventListener('click', () => activateTab('tab-history'));
+// ---- Recommended Verified Questions ----
 
-document.querySelector('[role="tablist"]').addEventListener('keydown', (e) => {
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const current = document.activeElement.id;
-  let idx = TAB_ORDER.indexOf(current);
-  if (idx === -1) return;
-  idx = e.key === 'ArrowRight' ? (idx + 1) % TAB_ORDER.length : (idx - 1 + TAB_ORDER.length) % TAB_ORDER.length;
-  const next = document.getElementById(TAB_ORDER[idx]);
-  next.focus();
-  activateTab(TAB_ORDER[idx]);
-});
+async function loadRecommendedQuestions(machineId) {
+  const container = document.getElementById('recommended-questions-container');
+  const list = document.getElementById('recommended-questions-list');
+  const heading = document.getElementById('verified-questions-heading');
 
-// --- Home: ask a question, show only its own answer -------------------
+  try {
+    const resp = await apiFetch(`/api/machines/${machineId}/recommended-questions/`);
+    if (!resp.ok) {
+      container.style.display = 'none';
+      return;
+    }
+    const data = await resp.json();
+    const questions = data.questions || [];
 
-const EMPTY_HOME_STATE = '<div class="empty-state">Ask a question above to see the RAG-only and Groq AI answers here.</div>';
-// The machine the currently-displayed Home answer was actually generated
-// for - set only when a real answer is shown. Used to detect when the
-// Engineer changes the machine selector after an answer is already on
-// screen, so a stale answer is never left looking like it belongs to the
-// machine now selected (see renderQuestion(), which also labels each
-// answer with its own machine).
-let currentAnswerMachineId = null;
+    if (!questions.length) {
+      container.style.display = 'none';
+      return;
+    }
 
-document.getElementById('machine-select').addEventListener('change', (e) => {
-  if (currentAnswerMachineId !== null && String(currentAnswerMachineId) !== e.target.value) {
-    document.getElementById('home-answer-area').innerHTML = EMPTY_HOME_STATE;
-    currentAnswerMachineId = null;
+    if (activeMachine) {
+      heading.textContent = `VERIFIED QUESTIONS FOR ${escapeHtml(activeMachine.model || activeMachine.machine_id)} (GROUNDED IN MANUALS):`;
+    }
+
+    list.innerHTML = questions.map(q => `
+      <div class="verified-question-link" role="button" tabindex="0" data-q="${escapeHtml(q)}">
+        <span class="vq-arrow">&rarr;</span>
+        <span class="vq-text">${escapeHtml(q)}</span>
+      </div>
+    `).join('');
+
+    container.style.display = 'block';
+
+    list.querySelectorAll('.verified-question-link').forEach(el => {
+      el.addEventListener('click', function() {
+        const qText = this.getAttribute('data-q');
+        document.getElementById('question-text').value = qText;
+        document.getElementById('ask-form').requestSubmit();
+      });
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          const qText = this.getAttribute('data-q');
+          document.getElementById('question-text').value = qText;
+          document.getElementById('ask-form').requestSubmit();
+        }
+      });
+    });
+  } catch (err) {
+    container.style.display = 'none';
   }
-  // Recommendations are always for the currently selected machine only -
-  // refresh (and implicitly discard the previous machine's suggestions)
-  // on every change, with its own loading state.
-  loadRecommendedQuestions(e.target.value);
+}
+
+// ---- Ask Form Submission ----
+
+document.getElementById('question-text').addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('ask-form').requestSubmit();
+  }
 });
 
-document.getElementById('ask-form').addEventListener('submit', async (e) => {
+document.getElementById('ask-form').addEventListener('submit', async function(e) {
   e.preventDefault();
-  const form = e.target;
-  const data = Object.fromEntries(new FormData(form).entries());
+  const textarea = document.getElementById('question-text');
   const submitBtn = document.getElementById('ask-submit');
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Asking...';
   const answerArea = document.getElementById('home-answer-area');
-  answerArea.innerHTML = '<div class="empty-state">Generating the answer&hellip; this may take a few seconds.</div>';
+
+  const questionText = textarea.value.trim();
+  if (!questionText || !activeMachine) return;
+
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = `
+    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    <span>Analyzing...</span>
+  `;
+
+  answerArea.innerHTML = `
+    <div class="ready-empty-state">
+      <div class="spinner-border text-primary mb-3" style="width: 2.5rem; height: 2.5rem;" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <h3 class="ready-title">Retrieving Grounded Passages</h3>
+      <p class="ready-subtitle">Searching machine-isolated manual chunks and synthesizing verifiable citations...</p>
+    </div>
+  `;
+
   try {
     const resp = await apiFetch('/api/questions/ask/', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        machine: activeMachine.id,
+        question_text: questionText,
+      }),
     });
-    if (resp.ok) {
-      const question = await resp.json();
-      answerArea.innerHTML = renderQuestion(question);
-      currentAnswerMachineId = question.machine;
-      form.reset();
-      // form.reset() restores the machine selector to its first <option>,
-      // not necessarily the one just answered for - keep the selector
-      // showing the machine this answer actually belongs to so the two
-      // never visibly disagree.
-      document.getElementById('machine-select').value = String(question.machine);
-      // The new question isn't reflected in any cached history list yet -
-      // invalidate it so the next time History is opened it fetches fresh,
-      // rather than making an extra request right now that the Engineer
-      // may never look at.
-      historyLoaded = false;
-    } else {
-      const body = await resp.json();
-      answerArea.innerHTML = `<div class="flat-alert flat-alert-danger"><span>${escapeHtml(JSON.stringify(body))}</span></div>`;
+
+    if (!resp.ok) {
+      let errText = 'Failed to answer question.';
+      try {
+        const errJson = await resp.json();
+        errText = errJson.detail || JSON.stringify(errJson);
+      } catch (_) {}
+      answerArea.innerHTML = `<div class="flat-alert flat-alert-danger">${escapeHtml(errText)}</div>`;
+      return;
     }
+
+    const question = await resp.json();
+    answerArea.innerHTML = renderDualAnswers(question);
+    textarea.value = '';
+  } catch (err) {
+    answerArea.innerHTML = `<div class="flat-alert flat-alert-danger">Network error: ${escapeHtml(err.message)}</div>`;
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Ask';
+    submitBtn.innerHTML = `
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <span>Ask Assistant</span>
+    `;
   }
 });
 
-// --- Question History: list + detail, read-only, no new API calls per click ---
-
-function renderHistorySummary(q, index) {
-  return `
-    <button type="button" class="flat-card history-item mb-2" data-index="${index}">
-      <div class="flat-card-body py-2">
-        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
-          <div>
-            <div class="fw-semibold" style="color: var(--color-text);">${escapeHtml(q.question_text)}</div>
-            <div class="text-muted-strong small">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
-          </div>
-          <div class="d-flex gap-1 flex-shrink-0">
-            ${renderStatusBadge(q.answers.rag_only.status)}
-            ${renderGroqStatusBadge(q.answers.rag_groq.status)}
-          </div>
-        </div>
-      </div>
-    </button>`;
-}
-
-function renderHistoryList(list) {
-  const listArea = document.getElementById('history-list-area');
-  if (!historyQuestions.length) {
-    listArea.innerHTML = '<div class="empty-state">No questions asked yet.</div>';
-    return;
-  }
-  if (!list.length) {
-    listArea.innerHTML = '<div class="empty-state">No questions match the current filters.</div>';
-    return;
-  }
-  listArea.innerHTML = list.map((q, i) => renderHistorySummary(q, i)).join('');
-  listArea.querySelectorAll('.history-item').forEach((btn) => {
-    btn.addEventListener('click', () => showHistoryDetail(parseInt(btn.dataset.index, 10)));
-  });
-}
-
-// --- History filters: all client-side over the already-fetched list -----
-// (no pagination exists on /api/questions/, and this Engineer's own
-// history is small enough to filter in the browser - no extra requests,
-// no N+1 queries, nothing server-side to keep in sync.)
-
-function matchesSearch(q, term) {
-  if (!term) return true;
-  const t = term.toLowerCase();
-  return q.question_text.toLowerCase().includes(t) || q.machine_id_code.toLowerCase().includes(t);
-}
-
-function matchesStatus(q, statusFilter) {
-  if (!statusFilter) return true;
-  const ragStatus = q.answers.rag_only.status;
-  const groqStatus = q.answers.rag_groq.status;
-  switch (statusFilter) {
-    case 'both_completed': return ragStatus === 'answered' && groqStatus === 'completed';
-    case 'rag_completed': return ragStatus === 'answered';
-    case 'groq_completed': return groqStatus === 'completed';
-    case 'groq_failed': return groqStatus === 'failed';
-    case 'insufficient_evidence': return ragStatus === 'insufficient_evidence';
-    case 'groq_unavailable': return groqStatus === 'unavailable';
-    default: return true;
-  }
-}
-
-function applyFiltersAndRender() {
-  const search = document.getElementById('filter-search').value.trim();
-  const machineVal = document.getElementById('filter-machine').value;
-  const statusVal = document.getElementById('filter-status').value;
-  const sortVal = document.getElementById('filter-sort').value;
-
-  filteredQuestions = historyQuestions.filter(q =>
-    matchesSearch(q, search)
-    && (!machineVal || String(q.machine) === machineVal)
-    && matchesStatus(q, statusVal)
-  );
-  filteredQuestions.sort((a, b) => {
-    const diff = new Date(a.created_at) - new Date(b.created_at);
-    return sortVal === 'oldest' ? diff : -diff;
-  });
-
-  renderHistoryList(filteredQuestions);
-  document.getElementById('filter-result-count').textContent = historyQuestions.length
-    ? `Showing ${filteredQuestions.length} of ${historyQuestions.length} questions`
-    : '';
-}
-
-['filter-search', 'filter-machine', 'filter-status', 'filter-sort'].forEach((id) => {
-  document.getElementById(id).addEventListener('input', applyFiltersAndRender);
-  document.getElementById(id).addEventListener('change', applyFiltersAndRender);
-});
-
-document.getElementById('filter-clear').addEventListener('click', () => {
-  document.getElementById('filter-search').value = '';
-  document.getElementById('filter-machine').value = '';
-  document.getElementById('filter-status').value = '';
-  document.getElementById('filter-sort').value = 'newest';
-  applyFiltersAndRender();
-});
+// ---- Query History Tab Logic ----
 
 async function loadHistory() {
   const listArea = document.getElementById('history-list-area');
-  listArea.hidden = false;
-  document.getElementById('history-detail-area').hidden = true;
-  listArea.innerHTML = '<div class="empty-state">Loading&hellip;</div>';
+  listArea.innerHTML = '<div class="ready-empty-state"><div class="spinner-border text-primary mb-2"></div><div>Loading inquiry history&hellip;</div></div>';
+
   try {
     const resp = await apiFetch('/api/questions/');
-    if (!resp.ok) throw new Error('history request failed');
+    if (!resp.ok) {
+      listArea.innerHTML = '<div class="flat-alert flat-alert-danger">Failed to load query history.</div>';
+      return;
+    }
     historyQuestions = await resp.json();
-    historyLoaded = true;
+    updateHistoryFilterCounts();
+    renderHistoryPillFilters();
+    applyHistoryFilters();
   } catch (err) {
-    listArea.innerHTML = '<div class="flat-alert flat-alert-danger"><span>Could not load question history. Please try again.</span></div>';
-    return;
+    listArea.innerHTML = `<div class="flat-alert flat-alert-danger">Error: ${escapeHtml(err.message)}</div>`;
   }
-  applyFiltersAndRender();
 }
 
-function showHistoryDetail(index) {
-  // Purely a client-side view of already-fetched data - selecting a past
-  // question never calls the API again and never touches the Home answer.
-  const q = filteredQuestions[index];
-  document.getElementById('history-list-area').hidden = true;
-  const detailArea = document.getElementById('history-detail-area');
-  detailArea.hidden = false;
-  detailArea.innerHTML = `
-    <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="history-back-btn">&larr; Back to history</button>
-    ${renderQuestion(q)}`;
-  document.getElementById('history-back-btn').addEventListener('click', () => {
-    detailArea.hidden = true;
-    detailArea.innerHTML = '';
-    document.getElementById('history-list-area').hidden = false;
+function updateHistoryFilterCounts() {
+  document.getElementById('count-all').textContent = historyQuestions.length;
+  document.getElementById('count-answered').textContent = historyQuestions.filter(q => q.status === 'answered').length;
+  document.getElementById('count-unanswered').textContent = historyQuestions.filter(q => q.status !== 'answered').length;
+}
+
+function renderHistoryPillFilters() {
+  const container = document.getElementById('machine-filter-pills');
+  if (!container) return;
+
+  const machineCounts = {};
+  historyQuestions.forEach(q => {
+    const code = q.machine_id_code || String(q.machine);
+    machineCounts[code] = (machineCounts[code] || 0) + 1;
+  });
+
+  const machineCodes = Object.keys(machineCounts);
+  container.innerHTML = machineCodes.map(code => {
+    const isAct = activeFilter.type === 'machine' && activeFilter.val === code;
+    return `
+      <button type="button" class="history-pill ${isAct ? 'active' : ''}" data-filter-type="machine" data-filter-val="${escapeHtml(code)}">
+        ${escapeHtml(code)} (${machineCounts[code]})
+      </button>
+    `;
+  }).join('');
+
+  // Re-bind click handlers on all pills
+  document.querySelectorAll('.history-pill').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.history-pill').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      activeFilter.type = this.getAttribute('data-filter-type');
+      activeFilter.val = this.getAttribute('data-filter-val');
+      applyHistoryFilters();
+    });
   });
 }
 
+function applyHistoryFilters() {
+  const search = (document.getElementById('filter-search').value || '').toLowerCase().trim();
+  const sort = document.getElementById('filter-sort').value;
+
+  filteredQuestions = historyQuestions.filter(q => {
+    // Pill filter
+    if (activeFilter.type === 'machine') {
+      if ((q.machine_id_code || '') !== activeFilter.val) return false;
+    } else if (activeFilter.type === 'status') {
+      if (activeFilter.val === 'answered' && q.status !== 'answered') return false;
+      if (activeFilter.val === 'insufficient_evidence' && q.status === 'answered') return false;
+    }
+
+    // Keyword search filter
+    if (search) {
+      const qText = (q.question_text || '').toLowerCase();
+      const mCode = (q.machine_id_code || '').toLowerCase();
+      if (!qText.includes(search) && !mCode.includes(search)) return false;
+    }
+
+    return true;
+  });
+
+  // Sort
+  if (sort === 'oldest') {
+    filteredQuestions.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  } else {
+    filteredQuestions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
+
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const container = document.getElementById('history-list-area');
+  const countLabel = document.getElementById('filter-result-count');
+
+  countLabel.textContent = `Showing ${filteredQuestions.length} of ${historyQuestions.length} queries`;
+
+  if (!filteredQuestions.length) {
+    container.innerHTML = `
+      <div class="ready-empty-state">
+        <div class="ready-icon-bubble">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="1.75">
+            <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+        </div>
+        <h3 class="ready-title">No Matching Queries Found</h3>
+        <p class="ready-subtitle">Adjust your search term or filter selection to view past inquiries.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filteredQuestions.map(q => {
+    const isAnswered = q.status === 'answered';
+    return `
+      <div class="history-item-card mb-3" id="history-item-${q.id}">
+        <div class="history-item-header d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="machine-id-pill small">${escapeHtml(q.machine_id_code || 'M')}</span>
+              <span class="text-muted small">${new Date(q.created_at).toLocaleString()}</span>
+            </div>
+            <h4 class="history-question-title mb-0">${escapeHtml(q.question_text)}</h4>
+          </div>
+          <div>
+            ${renderStatusBadge(q.status)}
+          </div>
+        </div>
+        <div class="mt-3">
+          ${renderDualAnswers(q)}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+document.getElementById('filter-search').addEventListener('input', applyHistoryFilters);
+document.getElementById('filter-sort').addEventListener('change', applyHistoryFilters);
+
+// Initialize
 loadMachines();
 </script>
 {% endblock %}
