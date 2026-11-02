@@ -1,0 +1,158 @@
+{% extends "manuals/base.html" %}
+{% block title %}Administrator Dashboard{% endblock %}
+{% block content %}
+<h2 class="mb-4">Administrator Dashboard</h2>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Register a machine</h5>
+        <form id="machine-form">
+          <div class="mb-2">
+            <label class="form-label">Machine ID</label>
+            <input class="form-control" name="machine_id" placeholder="e.g. M-HP200" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Model</label>
+            <input class="form-control" name="model" placeholder="e.g. HP-200" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Name</label>
+            <input class="form-control" name="name" placeholder="e.g. Hydraulic forming press" required>
+          </div>
+          <button class="btn btn-primary" type="submit">Register machine</button>
+          <div id="machine-form-msg" class="mt-2"></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Upload a manual</h5>
+        <form id="manual-form">
+          <div class="mb-2">
+            <label class="form-label">Machine</label>
+            <select class="form-select" name="machine" id="manual-machine-select" required></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Document ID</label>
+            <input class="form-control" name="document_id" placeholder="e.g. HP-OPS-01" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Revision</label>
+            <input class="form-control" name="revision" placeholder="e.g. 1.0" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">PDF file</label>
+            <input class="form-control" type="file" name="file" accept="application/pdf" required>
+          </div>
+          <button class="btn btn-primary" type="submit">Upload &amp; ingest</button>
+          <div id="manual-form-msg" class="mt-2"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="card-title mb-0">Manuals &amp; ingestion status</h5>
+          <button class="btn btn-sm btn-outline-secondary" id="refresh-manuals">Refresh</button>
+        </div>
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr><th>Machine</th><th>Document</th><th>Rev</th><th>Status</th><th>Pages</th><th></th></tr>
+          </thead>
+          <tbody id="manuals-table-body">
+            <tr><td colspan="6" class="text-muted">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let machinesCache = [];
+
+async function loadMachines() {
+  const resp = await apiFetch('/api/machines/');
+  machinesCache = await resp.json();
+  const select = document.getElementById('manual-machine-select');
+  select.innerHTML = machinesCache.map(m => `<option value="${m.id}">${m.machine_id} - ${m.name}</option>`).join('');
+}
+
+async function loadManuals() {
+  const resp = await apiFetch('/api/manuals/');
+  const manuals = await resp.json();
+  const body = document.getElementById('manuals-table-body');
+  if (!manuals.length) {
+    body.innerHTML = '<tr><td colspan="6" class="text-muted">No manuals uploaded yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = manuals.map(m => {
+    const badgeClass = {completed: 'bg-success', processing: 'bg-warning text-dark', pending: 'bg-secondary', failed: 'bg-danger'}[m.status] || 'bg-secondary';
+    const err = m.error_message ? `<div class="text-danger small">${m.error_message}</div>` : '';
+    return `<tr>
+      <td>${m.machine_id_code}</td>
+      <td>${m.document_id}${err}</td>
+      <td>${m.revision}</td>
+      <td><span class="badge ${badgeClass}">${m.status}</span></td>
+      <td>${m.page_count}</td>
+      <td>${m.file ? `<a href="${m.file}" target="_blank" class="btn btn-sm btn-outline-primary">Open</a>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+document.getElementById('machine-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form).entries());
+  const resp = await apiFetch('/api/machines/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const msg = document.getElementById('machine-form-msg');
+  if (resp.ok) {
+    msg.innerHTML = '<div class="alert alert-success py-1">Machine registered.</div>';
+    form.reset();
+    await loadMachines();
+  } else {
+    const body = await resp.json();
+    msg.innerHTML = `<div class="alert alert-danger py-1">${JSON.stringify(body)}</div>`;
+  }
+});
+
+document.getElementById('manual-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const msg = document.getElementById('manual-form-msg');
+  msg.innerHTML = '<div class="text-muted">Uploading and extracting text&hellip; this may take a few seconds.</div>';
+  const resp = await apiFetch('/api/manuals/', {method: 'POST', body: formData});
+  if (resp.ok) {
+    const body = await resp.json();
+    if (body.status === 'failed') {
+      msg.innerHTML = `<div class="alert alert-danger py-1">Upload saved but ingestion failed: ${body.error_message}</div>`;
+    } else {
+      msg.innerHTML = '<div class="alert alert-success py-1">Manual uploaded and indexed.</div>';
+      form.reset();
+    }
+    await loadManuals();
+  } else {
+    const body = await resp.json();
+    msg.innerHTML = `<div class="alert alert-danger py-1">${JSON.stringify(body)}</div>`;
+  }
+});
+
+document.getElementById('refresh-manuals').addEventListener('click', loadManuals);
+
+loadMachines();
+loadManuals();
+</script>
+{% endblock %}

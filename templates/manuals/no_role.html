@@ -1,0 +1,8 @@
+{% extends "manuals/base.html" %}
+{% block title %}No role assigned{% endblock %}
+{% block content %}
+<div class="alert alert-warning">
+  Your account ({{ user.username }}) has no role assigned yet. Ask an Administrator to set your role
+  (Administrator, Engineer, or Supervisor) in the Django admin.
+</div>
+{% endblock %}

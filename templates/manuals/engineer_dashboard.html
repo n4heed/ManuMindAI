@@ -1,0 +1,108 @@
+{% extends "manuals/base.html" %}
+{% block title %}Engineer Dashboard{% endblock %}
+{% block content %}
+<h2 class="mb-4">Ask the Manual Assistant</h2>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form id="ask-form">
+      <div class="mb-3">
+        <label class="form-label">Machine</label>
+        <select class="form-select" name="machine" id="machine-select" required></select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Maintenance question</label>
+        <textarea class="form-control" name="question_text" rows="2" placeholder="e.g. What does E17 mean?" required></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit" id="ask-submit">Ask</button>
+    </form>
+  </div>
+</div>
+
+<div id="answer-area"></div>
+
+<h4 class="mt-5 mb-3">Your question history</h4>
+<div id="history-area"><p class="text-muted">Loading...</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadMachines() {
+  const resp = await apiFetch('/api/machines/');
+  const machines = await resp.json();
+  document.getElementById('machine-select').innerHTML =
+    machines.map(m => `<option value="${m.id}">${m.machine_id} - ${m.name}</option>`).join('');
+}
+
+function renderQuestion(q) {
+  const statusBadge = q.status === 'answered'
+    ? '<span class="badge bg-success">Answered</span>'
+    : '<span class="badge status-badge-insufficient text-white">Insufficient evidence</span>';
+  const citations = (q.citations || []).map(c => `
+    <div class="card citation-card mb-2">
+      <div class="card-body py-2">
+        <div class="d-flex justify-content-between">
+          <strong>${c.document_id} (rev ${c.revision}) &mdash; page ${c.page_number}</strong>
+          <span class="text-muted small">score ${c.score.toFixed(2)}</span>
+        </div>
+        <pre class="excerpt mb-1">${c.excerpt}</pre>
+        ${c.manual_file_url ? `<a href="${c.manual_file_url}#page=${c.page_number}" target="_blank" class="small">Open PDF at page ${c.page_number}</a>` : ''}
+      </div>
+    </div>`).join('');
+  return `
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <h6 class="mb-1">${q.question_text}</h6>
+          ${statusBadge}
+        </div>
+        <p class="mb-2">${q.answer_text}</p>
+        ${citations}
+        <div class="text-muted small">${q.machine_id_code} &middot; ${new Date(q.created_at).toLocaleString()} &middot; source: ${q.llm_provider}</div>
+      </div>
+    </div>`;
+}
+
+async function loadHistory() {
+  const resp = await apiFetch('/api/questions/');
+  const questions = await resp.json();
+  const area = document.getElementById('history-area');
+  area.innerHTML = questions.length
+    ? questions.map(renderQuestion).join('')
+    : '<p class="text-muted">No questions asked yet.</p>';
+}
+
+document.getElementById('ask-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form).entries());
+  const submitBtn = document.getElementById('ask-submit');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Asking...';
+  const answerArea = document.getElementById('answer-area');
+  answerArea.innerHTML = '';
+  try {
+    const resp = await apiFetch('/api/questions/ask/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    if (resp.ok) {
+      const question = await resp.json();
+      answerArea.innerHTML = renderQuestion(question);
+      form.reset();
+      await loadHistory();
+    } else {
+      const body = await resp.json();
+      answerArea.innerHTML = `<div class="alert alert-danger">${JSON.stringify(body)}</div>`;
+    }
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Ask';
+  }
+});
+
+loadMachines();
+loadHistory();
+</script>
+{% endblock %}

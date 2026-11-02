@@ -1,0 +1,68 @@
+{% extends "manuals/base.html" %}
+{% block title %}Supervisor Dashboard{% endblock %}
+{% block content %}
+<h2 class="mb-4">Question History (read-only)</h2>
+
+<div class="d-flex gap-2 mb-3 align-items-center">
+  <select class="form-select w-auto" id="machine-filter">
+    <option value="">All machines</option>
+  </select>
+  <div class="form-check">
+    <input class="form-check-input" type="checkbox" id="unanswered-only">
+    <label class="form-check-label" for="unanswered-only">Unanswered / insufficient-evidence only</label>
+  </div>
+</div>
+
+<div id="history-area"><p class="text-muted">Loading...</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allQuestions = [];
+
+async function loadMachines() {
+  const resp = await apiFetch('/api/machines/');
+  const machines = await resp.json();
+  const select = document.getElementById('machine-filter');
+  select.innerHTML = '<option value="">All machines</option>' +
+    machines.map(m => `<option value="${m.id}">${m.machine_id} - ${m.name}</option>`).join('');
+}
+
+function render() {
+  const machineId = document.getElementById('machine-filter').value;
+  const unansweredOnly = document.getElementById('unanswered-only').checked;
+  let rows = allQuestions;
+  if (machineId) rows = rows.filter(q => String(q.machine) === machineId);
+  if (unansweredOnly) rows = rows.filter(q => q.status !== 'answered');
+
+  const area = document.getElementById('history-area');
+  if (!rows.length) {
+    area.innerHTML = '<p class="text-muted">No matching questions.</p>';
+    return;
+  }
+  area.innerHTML = `<table class="table table-sm table-striped align-middle">
+    <thead><tr><th>Asked by</th><th>Machine</th><th>Question</th><th>Status</th><th>When</th></tr></thead>
+    <tbody>${rows.map(q => `
+      <tr>
+        <td>${q.asked_by}</td>
+        <td>${q.machine_id_code}</td>
+        <td>${q.question_text}</td>
+        <td>${q.status === 'answered' ? '<span class="badge bg-success">Answered</span>' : '<span class="badge status-badge-insufficient text-white">Insufficient evidence</span>'}</td>
+        <td>${new Date(q.created_at).toLocaleString()}</td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function loadHistory() {
+  const resp = await apiFetch('/api/questions/');
+  allQuestions = await resp.json();
+  render();
+}
+
+document.getElementById('machine-filter').addEventListener('change', render);
+document.getElementById('unanswered-only').addEventListener('change', render);
+
+loadMachines();
+loadHistory();
+</script>
+{% endblock %}
