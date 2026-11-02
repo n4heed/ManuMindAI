@@ -38,8 +38,27 @@ _STOPWORDS = frozenset(
 )
 
 
+def _stem(token: str) -> str:
+    """
+    Minimal, conservative suffix stripping (no external dependency). This is
+    NOT a real stemmer (no Porter algorithm) - it only trims the handful of
+    endings that commonly separate a question's wording from a manual's
+    (e.g. "checked"/"check", "filters"/"filter") while avoiding short words
+    and words ending "ss" (e.g. "process") where stripping "s" would be wrong.
+    """
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
 def _tokenize(text: str) -> list[str]:
-    return [t for t in _TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS]
+    return [_stem(t) for t in _TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS]
 
 
 class EmbeddingProvider(ABC):

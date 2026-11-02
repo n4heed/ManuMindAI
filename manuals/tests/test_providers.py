@@ -25,6 +25,19 @@ class LocalEmbeddingProviderTests(TestCase):
         [v] = self.embedder.embed([""])
         self.assertEqual(v, {})
 
+    def test_light_stemming_matches_different_word_forms(self):
+        # "recorded" (question) vs "record" (manual text) - different exact strings,
+        # same stem. Without stemming this pair scores 0.0 (see README section 3).
+        [q] = self.embedder.embed(["What should be recorded before escalation?"])
+        [c] = self.embedder.embed(["Record the alarm code before escalating the fault."])
+        self.assertGreater(cosine_similarity(q, c), 0.0)
+
+    def test_stemming_does_not_merge_unrelated_short_words(self):
+        # Guard against over-aggressive stripping, e.g. "process"/"bus" should not
+        # become "proce"/"bu" and accidentally collide with something else.
+        [v] = self.embedder.embed(["process"])
+        self.assertIn("process", v)
+
 
 class LocalLLMProviderTests(TestCase):
     def test_extractive_answer_uses_relevant_sentence(self):

@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.test import TestCase, override_settings
 
 from manuals.models import Question
@@ -73,3 +75,47 @@ class MachineIsolationRetrievalTests(TestCase):
         self.assertEqual(question.status, Question.Status.INSUFFICIENT_EVIDENCE)
         for citation in question.citations.all():
             self.assertEqual(citation.manual.machine_id, self.machine_a.id)
+
+
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.12, RAG_TOP_K=5)
+class RetrievalDedupAndThresholdTests(TestCase):
+    """Covers the duplicate-citation fix: a long page split into overlapping
+    chunks should surface as ONE citation, not one per chunk."""
+
+    def setUp(self):
+        self.machine = make_machine()
+        self.manual = make_manual(self.machine)
+
+    def test_at_most_one_citation_per_page(self):
+        # Two chunks that both clearly match the question, from the SAME page -
+        # simulating the overlap between adjacent chunks of one long page.
+        make_chunk(self.manual, "The AF-10 filter indicator should be checked weekly.", page_number=3, chunk_index=0)
+        make_chunk(
+            self.manual,
+            "checked weekly. Filter replacement for the AF-10 indicator is due every six months.",
+            page_number=3,
+            chunk_index=1,
+        )
+        results = retrieve_chunks(self.machine, "How often is the AF-10 filter indicator checked?")
+        pages = [r.chunk.page.page_number for r in results]
+        self.assertEqual(len(pages), len(set(pages)), "expected at most one chunk per page")
+
+    def test_distinct_pages_are_not_deduped(self):
+        make_chunk(self.manual, "The AF-10 filter indicator should be checked weekly.", page_number=2)
+        make_chunk(self.manual, "The AF-10 filter is replaced every six months per the maintenance schedule.", page_number=3)
+        results = retrieve_chunks(self.machine, "How often is the AF-10 filter checked or replaced?")
+        pages = {r.chunk.page.page_number for r in results}
+        self.assertEqual(pages, {2, 3})
+
+    def test_threshold_boundary_is_inclusive(self):
+        make_chunk(self.manual, "irrelevant placeholder text", page_number=1)
+        with mock.patch("manuals.services.cosine_similarity", return_value=0.12):
+            results = retrieve_chunks(self.machine, "anything")
+        self.assertEqual(len(results), 1)  # score == threshold must be included (>=, not >)
+
+    def test_top_k_is_respected(self):
+        for i in range(10):
+            make_chunk(self.manual, f"Filter check item number {i} for the AF-10 filter.", page_number=i + 1)
+        with override_settings(RAG_TOP_K=3):
+            results = retrieve_chunks(self.machine, "AF-10 filter check")
+        self.assertLessEqual(len(results), 3)

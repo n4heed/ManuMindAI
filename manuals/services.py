@@ -192,7 +192,17 @@ class RetrievedChunk:
 
 
 def retrieve_chunks(machine: Machine, question_text: str) -> list[RetrievedChunk]:
-    """Retrieve the top-K chunks for ONE machine only, above the similarity threshold."""
+    """Retrieve the top-K chunks for ONE machine only, above the similarity threshold.
+
+    At most one chunk per (manual, page) is kept - a page longer than
+    CHUNK_TARGET_CHARS is split into multiple chunks with a deliberate
+    character overlap (see chunk_page_text), so two chunks from the same
+    page are frequently near-duplicates of each other. Without this, a
+    single relevant page could show up as two or three almost-identical
+    citations. Keeping only the best-scoring chunk per page trades away the
+    rare case of one long page holding two genuinely distinct answers, which
+    this hackathon's 3-page manuals don't exhibit.
+    """
     embedder = get_embedding_provider()
     [question_vector] = embedder.embed([question_text])
 
@@ -205,4 +215,14 @@ def retrieve_chunks(machine: Machine, question_text: str) -> list[RetrievedChunk
     ]
     scored.sort(key=lambda r: r.score, reverse=True)
     above_threshold = [r for r in scored if r.score >= settings.RAG_SIMILARITY_THRESHOLD]
-    return above_threshold[: settings.RAG_TOP_K]
+
+    deduped: list[RetrievedChunk] = []
+    seen_pages: set[tuple[int, int]] = set()
+    for r in above_threshold:
+        page_key = (r.chunk.manual_id, r.chunk.page_id)
+        if page_key in seen_pages:
+            continue
+        seen_pages.add(page_key)
+        deduped.append(r)
+
+    return deduped[: settings.RAG_TOP_K]

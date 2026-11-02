@@ -49,6 +49,11 @@ function renderQuestion(q) {
         ${c.manual_file_url ? `<a href="${c.manual_file_url}#page=${c.page_number}" target="_blank" class="small">Open PDF at page ${c.page_number}</a>` : ''}
       </div>
     </div>`).join('');
+  const providerNote = q.llm_provider === 'local'
+    ? '<div class="alert alert-warning py-1 px-2 small mb-2">Not AI-generated: this answer is the matching manual text shown directly (no LLM is configured yet). See citations below for the source.</div>'
+    : (q.llm_provider && q.llm_provider !== 'none'
+        ? `<div class="small text-muted mb-2">AI-generated answer (${q.llm_provider}), grounded in the citations below.</div>`
+        : '');
   return `
     <div class="card shadow-sm mb-3">
       <div class="card-body">
@@ -56,9 +61,10 @@ function renderQuestion(q) {
           <h6 class="mb-1">${q.question_text}</h6>
           ${statusBadge}
         </div>
+        ${providerNote}
         <p class="mb-2">${q.answer_text}</p>
         ${citations}
-        <div class="text-muted small">${q.machine_id_code} &middot; ${new Date(q.created_at).toLocaleString()} &middot; source: ${q.llm_provider}</div>
+        <div class="text-muted small">${q.machine_id_code} &middot; ${new Date(q.created_at).toLocaleString()}</div>
       </div>
     </div>`;
 }
