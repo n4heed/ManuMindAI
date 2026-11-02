@@ -20,6 +20,13 @@ class Machine(models.Model):
     model = models.CharField(max_length=100)
     name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set instead of a hard delete whenever the machine has question history
+    # that a hard delete would otherwise destroy (Question.machine is
+    # on_delete=CASCADE) - see manuals/views_api.py: MachineDeleteView. An
+    # archived machine is excluded from the Engineer ask-form's machine
+    # selector but keeps all its manuals, chunks, and history intact and
+    # still visible/filterable in Question History.
+    is_archived = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.machine_id} - {self.name}'
@@ -119,16 +126,27 @@ class Question(models.Model):
 
 
 class Citation(models.Model):
-    """RAG-only answer citations (unchanged from before the Groq feature)."""
+    """
+    RAG-only answer citations. `manual` is nullable with on_delete=SET_NULL
+    (not CASCADE) so permanently deleting a Manual (manuals/views_api.py:
+    ManualDeleteView) never destroys a historical Question's citation list -
+    `manual_document_id`/`manual_revision` are a snapshot captured at
+    citation-creation time (manuals/rag/pipeline.py), so the citation still
+    shows which manual it came from even after that Manual row is gone.
+    `page_number`, `excerpt`, and `score` were always stored directly here,
+    not derived from Manual/Chunk at read time, so they survive unchanged.
+    """
 
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='citations')
-    manual = models.ForeignKey(Manual, on_delete=models.CASCADE, related_name='citations')
+    manual = models.ForeignKey(Manual, on_delete=models.SET_NULL, null=True, blank=True, related_name='citations')
+    manual_document_id = models.CharField(max_length=50, blank=True, default='')
+    manual_revision = models.CharField(max_length=20, blank=True, default='')
     page_number = models.PositiveIntegerField()
     excerpt = models.TextField()
     score = models.FloatField()
 
     def __str__(self):
-        return f'{self.manual.document_id} p.{self.page_number}'
+        return f'{self.manual_document_id} p.{self.page_number}'
 
 
 class GroqClaim(models.Model):
@@ -174,13 +192,20 @@ class GroqCitation(models.Model):
     every row created after - both are rendered correctly for backward
     compatibility (see QuestionSerializer.get_answers / renderDualAnswers()
     in base.html).
+
+    `manual` is nullable with on_delete=SET_NULL for the same reason as
+    Citation.manual above - deleting a Manual must never destroy a
+    historical Groq answer's citations; manual_document_id/manual_revision
+    are the same kind of creation-time snapshot.
     """
 
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='groq_citations')
     claim = models.ForeignKey(
         GroqClaim, on_delete=models.CASCADE, related_name='citations', null=True, blank=True
     )
-    manual = models.ForeignKey(Manual, on_delete=models.CASCADE, related_name='groq_citations')
+    manual = models.ForeignKey(Manual, on_delete=models.SET_NULL, null=True, blank=True, related_name='groq_citations')
+    manual_document_id = models.CharField(max_length=50, blank=True, default='')
+    manual_revision = models.CharField(max_length=20, blank=True, default='')
     page_number = models.PositiveIntegerField()
     excerpt = models.TextField()
     quote = models.TextField(blank=True, default='')
@@ -188,4 +213,4 @@ class GroqCitation(models.Model):
     source_id = models.CharField(max_length=10)
 
     def __str__(self):
-        return f'{self.source_id} -> {self.manual.document_id} p.{self.page_number}'
+        return f'{self.source_id} -> {self.manual_document_id} p.{self.page_number}'

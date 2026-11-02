@@ -5,9 +5,26 @@ from .models import Citation, GroqCitation, GroqClaim, Machine, Manual, Question
 
 
 class MachineSerializer(serializers.ModelSerializer):
+    # Annotated by MachineListCreateView's queryset (Count(..., distinct=True))
+    # for GET list responses, to avoid N+1 queries. A freshly-created
+    # Machine from POST has no such annotation, so these fall back to a
+    # direct (always-correct, just not pre-annotated) count instead of
+    # crashing on a missing attribute.
+    manual_count = serializers.SerializerMethodField()
+    question_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Machine
-        fields = ["id", "machine_id", "model", "name", "created_at"]
+        fields = ["id", "machine_id", "model", "name", "created_at", "is_archived", "manual_count", "question_count"]
+        read_only_fields = ["is_archived", "manual_count", "question_count"]
+
+    def get_manual_count(self, obj):
+        value = getattr(obj, "manual_count", None)
+        return value if value is not None else obj.manuals.count()
+
+    def get_question_count(self, obj):
+        value = getattr(obj, "question_count", None)
+        return value if value is not None else obj.questions.count()
 
 
 class ManualSerializer(serializers.ModelSerializer):
@@ -70,16 +87,27 @@ class ManualSerializer(serializers.ModelSerializer):
 
 
 class CitationSerializer(serializers.ModelSerializer):
-    document_id = serializers.CharField(source="manual.document_id", read_only=True)
-    revision = serializers.CharField(source="manual.revision", read_only=True)
+    # document_id/revision read from the snapshot captured at citation-
+    # creation time (manuals/rag/pipeline.py), not live from `manual` -
+    # correct and identical either way while the Manual still exists, and
+    # still correct (not blank, not a crash) after it has been deleted.
+    document_id = serializers.CharField(source="manual_document_id", read_only=True)
+    revision = serializers.CharField(source="manual_revision", read_only=True)
     manual_file_url = serializers.SerializerMethodField()
+    manual_deleted = serializers.SerializerMethodField()
 
     class Meta:
         model = Citation
-        fields = ["id", "manual", "document_id", "revision", "page_number", "excerpt", "score", "manual_file_url"]
+        fields = [
+            "id", "manual", "document_id", "revision", "page_number", "excerpt", "score",
+            "manual_file_url", "manual_deleted",
+        ]
+
+    def get_manual_deleted(self, obj):
+        return obj.manual_id is None
 
     def get_manual_file_url(self, obj):
-        if not obj.manual.file:
+        if obj.manual_id is None or not obj.manual.file:
             return None
         request = self.context.get("request")
         url = reverse("api-manual-file", kwargs={"manual_id": obj.manual_id})
@@ -87,9 +115,10 @@ class CitationSerializer(serializers.ModelSerializer):
 
 
 class GroqCitationSerializer(serializers.ModelSerializer):
-    document_id = serializers.CharField(source="manual.document_id", read_only=True)
-    revision = serializers.CharField(source="manual.revision", read_only=True)
+    document_id = serializers.CharField(source="manual_document_id", read_only=True)
+    revision = serializers.CharField(source="manual_revision", read_only=True)
     manual_file_url = serializers.SerializerMethodField()
+    manual_deleted = serializers.SerializerMethodField()
 
     class Meta:
         model = GroqCitation
@@ -104,10 +133,14 @@ class GroqCitationSerializer(serializers.ModelSerializer):
             "score",
             "source_id",
             "manual_file_url",
+            "manual_deleted",
         ]
 
+    def get_manual_deleted(self, obj):
+        return obj.manual_id is None
+
     def get_manual_file_url(self, obj):
-        if not obj.manual.file:
+        if obj.manual_id is None or not obj.manual.file:
             return None
         request = self.context.get("request")
         url = reverse("api-manual-file", kwargs={"manual_id": obj.manual_id})
@@ -190,5 +223,8 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 
 class AskQuestionSerializer(serializers.Serializer):
-    machine = serializers.PrimaryKeyRelatedField(queryset=Machine.objects.all())
+    # Archived machines are excluded here - not just hidden from the
+    # Engineer ask-form's <select> - so a direct API request can never
+    # submit a new question against an archived machine either.
+    machine = serializers.PrimaryKeyRelatedField(queryset=Machine.objects.filter(is_archived=False))
     question_text = serializers.CharField(max_length=2000)

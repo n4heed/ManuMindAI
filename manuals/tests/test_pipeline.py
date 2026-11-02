@@ -3,13 +3,13 @@ from unittest import mock
 from django.test import TestCase, override_settings
 
 from manuals.models import Question
-from manuals.rag.pipeline import INSUFFICIENT_EVIDENCE_MESSAGE, answer_question
+from manuals.rag.pipeline import answer_question, build_insufficient_evidence_message
 from manuals.services import retrieve_chunks
 
 from .helpers import make_chunk, make_machine, make_manual, make_user
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class AnswerQuestionTests(TestCase):
     def setUp(self):
         self.engineer = make_user("eng1", "engineer")
@@ -26,7 +26,8 @@ class AnswerQuestionTests(TestCase):
         question = answer_question(self.engineer, empty_machine, "How often is the filter checked?")
 
         self.assertEqual(question.status, Question.Status.INSUFFICIENT_EVIDENCE)
-        self.assertEqual(question.answer_text, INSUFFICIENT_EVIDENCE_MESSAGE)
+        self.assertEqual(question.answer_text, build_insufficient_evidence_message(empty_machine))
+        self.assertIn("M-EMPTY", question.answer_text)
         self.assertEqual(question.citations.count(), 0)
 
     def test_answers_with_citation_when_evidence_present(self):
@@ -43,7 +44,7 @@ class AnswerQuestionTests(TestCase):
         self.assertEqual(question.status, Question.Status.INSUFFICIENT_EVIDENCE)
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class MachineIsolationRetrievalTests(TestCase):
     """The two required automated checks from the brief include: 'retrieval excludes
     passages belonging to another machine'. This directly tests that at the

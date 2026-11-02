@@ -237,6 +237,30 @@ class ClaimCitationValidationTests(TestCase):
         self.assertEqual(claims.first().citations.count(), 1)
 
     @mock.patch("manuals.rag.pipeline.get_groq_provider")
+    def test_explanatory_multi_sentence_claim_is_stored_verbatim_and_grounded(self, mock_get_provider):
+        """Explanatory answers (the goal of this milestone) are longer than
+        the earlier one-liners, but the grounding requirement is unchanged:
+        the quote only needs to be a real substring, not the whole claim."""
+        explanatory_text = (
+            "E17 indicates a hydraulic pressure fault on this machine. In practical terms, the "
+            "controller has detected pressure below the documented threshold during forming. The "
+            "manual does not specify a corrective action beyond reporting the condition."
+        )
+        mock_provider = mock.MagicMock()
+        mock_provider.model = "openai/gpt-oss-120b"
+        mock_provider.generate.return_value = _answer(
+            (explanatory_text, [("S1", "E17 indicates a hydraulic pressure fault.")])
+        )
+        mock_get_provider.return_value = mock_provider
+
+        question = answer_question(self.engineer, self.machine, "What does E17 mean?")
+        self.assertEqual(question.groq_status, Question.GroqStatus.COMPLETED)
+        claim = GroqClaim.objects.get(question=question)
+        self.assertEqual(claim.text, explanatory_text)  # stored exactly, not truncated/altered
+        citation = claim.citations.get()
+        self.assertEqual(citation.quote, "E17 indicates a hydraulic pressure fault.")
+
+    @mock.patch("manuals.rag.pipeline.get_groq_provider")
     def test_unknown_source_identifier_is_rejected(self, mock_get_provider):
         """#7: a source_id Groq invented (never sent to it) is rejected."""
         mock_provider = mock.MagicMock()

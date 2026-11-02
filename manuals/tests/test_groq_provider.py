@@ -157,6 +157,23 @@ class StrictStructuredOutputRequestTests(TestCase):
         self.assertIn("verbatim", system_message.lower())
         self.assertIn("multiple parts", system_message.lower())
 
+    @mock.patch("manuals.rag.groq_provider.requests.post")
+    def test_prompt_requests_explanatory_not_one_line_answers(self, mock_post):
+        """The prompt must explicitly ask for brief explanation (2-4 sentences),
+        not just a bare citation, while still requiring exact verbatim quotes -
+        explanation and grounding are not in tension in the prompt design."""
+        mock_post.return_value = _structured_response("answered", [])
+        provider = get_groq_provider()
+        provider.generate("question", SOURCES)
+
+        sent_body = mock_post.call_args.kwargs["json"]
+        system_message = sent_body["messages"][0]["content"]
+        user_message = sent_body["messages"][1]["content"]
+        self.assertIn("explan", system_message.lower())  # "explain"/"explanatory"
+        self.assertIn("2-4", system_message)
+        self.assertIn("practical terms", system_message.lower())
+        self.assertIn("explan", user_message.lower())
+
 
 @override_settings(LLM_ENABLED=True, GROQ_API_KEY="sk-test-key")
 class StructuredResponseParsingTests(TestCase):

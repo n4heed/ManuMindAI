@@ -61,6 +61,7 @@
           <div class="mb-2">
             <label class="form-label" for="manual-machine-select">Machine</label>
             <select class="form-select" name="machine" id="manual-machine-select" required></select>
+            <div id="manual-machine-banner" class="small fw-semibold mt-1" style="color: var(--color-primary);"></div>
           </div>
           <div class="mb-2">
             <label class="form-label" for="f-document-id">Document ID</label>
@@ -83,6 +84,24 @@
   </div>
 
   <div class="col-lg-7">
+    <div class="flat-card mb-4">
+      <div class="flat-card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="flat-card-title mb-0">Machines</h2>
+        </div>
+        <div style="overflow-x: auto;">
+          <table class="flat-table">
+            <thead>
+              <tr><th>Machine</th><th>Status</th><th>Manuals</th><th>Questions</th><th></th></tr>
+            </thead>
+            <tbody id="machines-table-body">
+              <tr><td colspan="5" class="text-muted-strong">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="flat-card">
       <div class="flat-card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -103,6 +122,32 @@
     </div>
   </div>
 </div>
+
+<!-- Shared confirmation modal for destructive actions (machine/manual delete) -->
+<div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-title" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirm-modal-title">Confirm</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="confirm-modal-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-modal-action">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+  <div id="action-toast" class="toast align-items-center text-bg-success" role="status" aria-live="polite" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body" id="action-toast-body"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -120,27 +165,209 @@ function statusPill(status) {
   return `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
 }
 
+// --- Shared confirmation modal + toast for destructive actions ---------
+
+let confirmModalInstance = null;
+let confirmModalPending = false;
+
+function showConfirmModal({title, bodyHtml, actionLabel, actionClass, onConfirm}) {
+  document.getElementById('confirm-modal-title').textContent = title;
+  document.getElementById('confirm-modal-body').innerHTML = bodyHtml;
+  const oldBtn = document.getElementById('confirm-modal-action');
+  const newBtn = oldBtn.cloneNode(true); // strip any previous listener
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+  newBtn.textContent = actionLabel;
+  newBtn.className = `btn ${actionClass}`;
+  newBtn.disabled = false;
+  newBtn.addEventListener('click', async () => {
+    if (confirmModalPending) return; // prevents a duplicate request from a double-click
+    confirmModalPending = true;
+    newBtn.disabled = true;
+    const originalLabel = newBtn.textContent;
+    newBtn.textContent = 'Working…';
+    try {
+      await onConfirm();
+    } finally {
+      confirmModalPending = false;
+      newBtn.disabled = false;
+      newBtn.textContent = originalLabel;
+      confirmModalInstance.hide();
+    }
+  });
+  if (!confirmModalInstance) {
+    confirmModalInstance = new bootstrap.Modal(document.getElementById('confirm-modal'));
+  }
+  confirmModalInstance.show();
+}
+
+function showToast(message, isError) {
+  const toastEl = document.getElementById('action-toast');
+  toastEl.classList.toggle('text-bg-danger', !!isError);
+  toastEl.classList.toggle('text-bg-success', !isError);
+  document.getElementById('action-toast-body').textContent = message;
+  new bootstrap.Toast(toastEl, {delay: 4000}).show();
+}
+
+async function extractErrorDetail(resp, fallback) {
+  try {
+    const body = await resp.json();
+    return body.detail || fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+// --- Machines: list, archive-aware delete -------------------------------
+
+function machineStatusPill(machine) {
+  return machine.is_archived
+    ? '<span class="status-pill status-pill-neutral">Archived</span>'
+    : '<span class="status-pill status-pill-success">Active</span>';
+}
+
+function deleteMachineRow(machine) {
+  const isHardDelete = machine.question_count === 0;
+  const bodyHtml = `
+    <p class="mb-2"><strong>${escapeHtml(machine.machine_id)}</strong> &mdash; ${escapeHtml(machine.name)}</p>
+    <ul class="mb-3">
+      <li>${machine.manual_count} manual(s) uploaded</li>
+      <li>${machine.question_count} question(s) in history</li>
+    </ul>
+    ${isHardDelete
+      ? '<div class="flat-alert flat-alert-danger"><span>This is a <strong>permanent deletion</strong>: the machine and all of its manuals - including their stored PDF files - will be removed. This cannot be undone.</span></div>'
+      : '<div class="flat-alert flat-alert-warning"><span>This machine has question history, so it will be <strong>archived</strong>, not deleted: its manuals and every historical question/citation are preserved exactly as they are. It will simply stop accepting new questions and disappear from the Engineer machine selector.</span></div>'}
+  `;
+  showConfirmModal({
+    title: isHardDelete ? 'Delete machine permanently?' : 'Archive machine?',
+    bodyHtml,
+    actionLabel: isHardDelete ? 'Delete permanently' : 'Archive machine',
+    actionClass: isHardDelete ? 'btn-danger' : 'btn-warning',
+    onConfirm: async () => {
+      const resp = await apiFetch(`/api/machines/${machine.id}/`, {method: 'DELETE'});
+      if (resp.ok) {
+        showToast(isHardDelete ? `${machine.machine_id} deleted.` : `${machine.machine_id} archived.`);
+        await loadMachines();
+        await loadManuals();
+      } else {
+        showToast(await extractErrorDetail(resp, 'Could not complete the operation.'), true);
+      }
+    },
+  });
+}
+
+function unarchiveMachineRow(machine) {
+  showConfirmModal({
+    title: 'Unarchive machine?',
+    bodyHtml: `
+      <p class="mb-2"><strong>${escapeHtml(machine.machine_id)}</strong> &mdash; ${escapeHtml(machine.name)}</p>
+      <div class="flat-alert flat-alert-neutral"><span>This machine will become active again: it will reappear in the Engineer machine selector and accept new questions. Its manuals and history are unaffected - they were never touched by archiving.</span></div>
+    `,
+    actionLabel: 'Unarchive machine',
+    actionClass: 'btn-primary',
+    onConfirm: async () => {
+      const resp = await apiFetch(`/api/machines/${machine.id}/unarchive/`, {method: 'POST'});
+      if (resp.ok) {
+        showToast(`${machine.machine_id} unarchived.`);
+        await loadMachines();
+      } else {
+        showToast(await extractErrorDetail(resp, 'Could not unarchive this machine.'), true);
+      }
+    },
+  });
+}
+
+function renderMachinesTable() {
+  const body = document.getElementById('machines-table-body');
+  if (!machinesCache.length) {
+    body.innerHTML = '<tr><td colspan="5"><div class="empty-state">No machines registered yet.</div></td></tr>';
+    return;
+  }
+  body.innerHTML = machinesCache.map(m => `
+    <tr>
+      <td>${escapeHtml(m.machine_id)} &ndash; ${escapeHtml(m.name)}</td>
+      <td>${machineStatusPill(m)}</td>
+      <td>${m.manual_count}</td>
+      <td>${m.question_count}</td>
+      <td>
+        ${m.is_archived
+          ? `<button type="button" class="btn btn-sm btn-outline-primary machine-unarchive-btn" data-machine-id="${m.id}">Unarchive</button>`
+          : `<button type="button" class="btn btn-sm btn-outline-danger machine-delete-btn" data-machine-id="${m.id}">Delete</button>`}
+      </td>
+    </tr>`).join('');
+  body.querySelectorAll('.machine-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const machine = machinesCache.find(m => String(m.id) === btn.dataset.machineId);
+      if (machine) deleteMachineRow(machine);
+    });
+  });
+  body.querySelectorAll('.machine-unarchive-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const machine = machinesCache.find(m => String(m.id) === btn.dataset.machineId);
+      if (machine) unarchiveMachineRow(machine);
+    });
+  });
+}
+
 async function loadMachines() {
   const resp = await apiFetch('/api/machines/');
   machinesCache = await resp.json();
   document.getElementById('stat-machines').textContent = machinesCache.length;
   const select = document.getElementById('manual-machine-select');
   select.innerHTML = machinesCache.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
+  updateMachineBanner();
+  renderMachinesTable();
+}
+
+function updateMachineBanner() {
+  const select = document.getElementById('manual-machine-select');
+  const chosen = machinesCache.find(m => String(m.id) === select.value);
+  document.getElementById('manual-machine-banner').textContent =
+    chosen ? `Uploading for: ${chosen.machine_id} - ${chosen.name}` : '';
+}
+document.getElementById('manual-machine-select').addEventListener('change', updateMachineBanner);
+
+let manualsCache = [];
+
+function deleteManualRow(manual) {
+  const bodyHtml = `
+    <p class="mb-2"><strong>${escapeHtml(manual.document_id)}</strong> (rev ${escapeHtml(manual.revision)}) &mdash; ${escapeHtml(manual.machine_id_code)}</p>
+    <p class="text-muted-strong small mb-3">Status: ${escapeHtml(manual.status)} &middot; ${manual.page_count} page(s) indexed</p>
+    <div class="flat-alert flat-alert-danger">
+      <span>This permanently removes this manual from retrieval and deletes its indexed chunks and stored PDF file.
+      Historical questions and citations that used it are preserved, but their PDF link will be disabled.</span>
+    </div>
+  `;
+  showConfirmModal({
+    title: 'Delete manual permanently?',
+    bodyHtml,
+    actionLabel: 'Delete permanently',
+    actionClass: 'btn-danger',
+    onConfirm: async () => {
+      const resp = await apiFetch(`/api/manuals/${manual.id}/`, {method: 'DELETE'});
+      if (resp.ok) {
+        showToast(`${manual.document_id} deleted.`);
+        await loadManuals();
+        await loadMachines();
+      } else {
+        showToast(await extractErrorDetail(resp, 'Could not delete this manual.'), true);
+      }
+    },
+  });
 }
 
 async function loadManuals() {
   const resp = await apiFetch('/api/manuals/');
-  const manuals = await resp.json();
-  document.getElementById('stat-manuals').textContent = manuals.length;
-  document.getElementById('stat-completed').textContent = manuals.filter(m => m.status === 'completed').length;
-  document.getElementById('stat-failed').textContent = manuals.filter(m => m.status === 'failed').length;
+  manualsCache = await resp.json();
+  document.getElementById('stat-manuals').textContent = manualsCache.length;
+  document.getElementById('stat-completed').textContent = manualsCache.filter(m => m.status === 'completed').length;
+  document.getElementById('stat-failed').textContent = manualsCache.filter(m => m.status === 'failed').length;
 
   const body = document.getElementById('manuals-table-body');
-  if (!manuals.length) {
+  if (!manualsCache.length) {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state">No manuals uploaded yet. Use the form on the left to upload one.</div></td></tr>';
     return;
   }
-  body.innerHTML = manuals.map(m => {
+  body.innerHTML = manualsCache.map(m => {
     const err = m.error_message ? `<div class="text-danger small mt-1">${escapeHtml(m.error_message)}</div>` : '';
     return `<tr>
       <td>${escapeHtml(m.machine_id_code)}</td>
@@ -148,9 +375,18 @@ async function loadManuals() {
       <td>${escapeHtml(m.revision)}</td>
       <td>${statusPill(m.status)}</td>
       <td>${m.page_count}</td>
-      <td>${m.secure_file_url ? `<a href="${encodeURI(m.secure_file_url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open</a>` : ''}</td>
+      <td class="text-nowrap">
+        ${m.secure_file_url ? `<a href="${encodeURI(m.secure_file_url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open</a>` : ''}
+        <button type="button" class="btn btn-sm btn-outline-danger manual-delete-btn" data-manual-id="${m.id}">Delete</button>
+      </td>
     </tr>`;
   }).join('');
+  body.querySelectorAll('.manual-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const manual = manualsCache.find(m => String(m.id) === btn.dataset.manualId);
+      if (manual) deleteManualRow(manual);
+    });
+  });
 }
 
 document.getElementById('machine-form').addEventListener('submit', async (e) => {
@@ -173,13 +409,9 @@ document.getElementById('machine-form').addEventListener('submit', async (e) => 
   }
 });
 
-document.getElementById('manual-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const formData = new FormData(form);
-  const msg = document.getElementById('manual-form-msg');
-  const submitBtn = document.getElementById('manual-submit');
-  submitBtn.disabled = true;
+let manualMismatchConfirmed = false;
+
+async function performManualUpload(form, formData, msg, submitBtn) {
   msg.innerHTML = '<div class="flat-alert flat-alert-neutral py-1"><span>Uploading and extracting text&hellip; this may take a few seconds.</span></div>';
   try {
     const resp = await apiFetch('/api/manuals/', {method: 'POST', body: formData});
@@ -190,6 +422,7 @@ document.getElementById('manual-form').addEventListener('submit', async (e) => {
       } else {
         msg.innerHTML = '<div class="flat-alert flat-alert-neutral py-1"><span>Manual uploaded and indexed.</span></div>';
         form.reset();
+        updateMachineBanner();
       }
       await loadManuals();
     } else {
@@ -198,7 +431,45 @@ document.getElementById('manual-form').addEventListener('submit', async (e) => {
     }
   } finally {
     submitBtn.disabled = false;
+    manualMismatchConfirmed = false;
   }
+}
+
+document.getElementById('manual-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const msg = document.getElementById('manual-form-msg');
+  const submitBtn = document.getElementById('manual-submit');
+  submitBtn.disabled = true;
+
+  // Advisory-only safeguard: does the PDF's first page look like it belongs
+  // to a different machine than the one selected? Never blocks the upload
+  // on its own - only pauses for an explicit Administrator confirmation.
+  if (!manualMismatchConfirmed) {
+    try {
+      const checkResp = await apiFetch('/api/manuals/check-machine/', {method: 'POST', body: formData});
+      const checkBody = checkResp.ok ? await checkResp.json() : {warning: null};
+      if (checkBody.warning) {
+        msg.innerHTML = `
+          <div class="flat-alert flat-alert-warning py-1 mb-2"><span>${escapeHtml(checkBody.warning)}</span></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="manual-confirm-upload">Upload anyway</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="manual-cancel-upload">Cancel</button>`;
+        document.getElementById('manual-confirm-upload').addEventListener('click', () => {
+          manualMismatchConfirmed = true;
+          performManualUpload(form, formData, msg, submitBtn);
+        });
+        document.getElementById('manual-cancel-upload').addEventListener('click', () => {
+          msg.innerHTML = '';
+          submitBtn.disabled = false;
+        });
+        return;
+      }
+    } catch (err) {
+      // The check itself failing must never block a real upload.
+    }
+  }
+  await performManualUpload(form, formData, msg, submitBtn);
 });
 
 document.getElementById('refresh-manuals').addEventListener('click', loadManuals);

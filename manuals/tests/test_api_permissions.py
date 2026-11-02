@@ -49,7 +49,7 @@ class UploadRestrictionTests(TestCase):
         self.assertEqual(Manual.objects.count(), 1)
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class QuestionRolePermissionTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -81,7 +81,7 @@ class QuestionRolePermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.08, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class QuestionHistoryScopeTests(TestCase):
     def setUp(self):
         self.client = APIClient()

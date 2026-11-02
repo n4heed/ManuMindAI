@@ -96,7 +96,9 @@
           <span class="citation-score">similarity score ${c.score.toFixed(2)}</span>
         </div>
         ${c.quote ? `<div class="small fw-semibold mt-1" style="color: var(--color-text);">Exact supporting quote:</div><pre class="excerpt mb-1">${escapeHtml(c.quote)}</pre>` : `<pre class="excerpt mb-1">${escapeHtml(c.excerpt)}</pre>`}
-        ${c.manual_file_url ? `<a href="${encodeURI(c.manual_file_url)}#page=${c.page_number}" target="_blank" rel="noopener" class="small">Open PDF at page ${c.page_number} &rarr;</a>` : ''}
+        ${c.manual_deleted
+          ? '<span class="small text-muted-strong">Source manual deleted &mdash; PDF no longer available.</span>'
+          : (c.manual_file_url ? `<a href="${encodeURI(c.manual_file_url)}#page=${c.page_number}" target="_blank" rel="noopener" class="small">Open PDF at page ${c.page_number} &rarr;</a>` : '')}
       </div>`).join('') + `</div>`;
   }
 

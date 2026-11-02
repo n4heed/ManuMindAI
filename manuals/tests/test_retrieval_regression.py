@@ -18,7 +18,7 @@ from . import pdf_fixtures
 from .helpers import make_chunk, make_machine, make_manual, make_user
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.12, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.12, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class IdenticalAlarmCodeIsolationTests(TestCase):
     """Task C, point 1: identical alarm codes on different machines must
     only ever return the selected machine's own evidence."""
@@ -74,7 +74,7 @@ class IdenticalAlarmCodeIsolationTests(TestCase):
             self.assertEqual(c.manual.machine_id, self.machine_ac90.id)
 
 
-@override_settings(RAG_SIMILARITY_THRESHOLD=0.12, RAG_TOP_K=5)
+@override_settings(RAG_SIMILARITY_THRESHOLD=0.12, RAG_TOP_K=5, LLM_ENABLED=False, GROQ_API_KEY="")
 class CitationAccuracyTests(TestCase):
     """Task C, point 3: every citation must correspond to a chunk that was
     actually retrieved, with the correct manual and one-based page number."""

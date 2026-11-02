@@ -10,7 +10,9 @@ for ONE machine only -> top-K chunks above RAG_SIMILARITY_THRESHOLD.
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 
 from django.conf import settings
@@ -75,6 +77,86 @@ def extract_pages(file_path: str) -> list[tuple[int, str]]:
         return pages
     finally:
         doc.close()
+
+
+_MACHINE_LABEL_RE = re.compile(r"Machine:\s*([^\n|]+)", re.IGNORECASE)
+
+
+def check_machine_mismatch(uploaded_file, selected_machine: Machine) -> str | None:
+    """
+    Advisory-only safeguard for the Administrator upload form: looks at just
+    the PDF's first page and checks whether it seems to belong to a
+    different registered machine than the one selected. Never blocks, never
+    reassigns anything itself - returns a human-readable warning string, or
+    None if nothing looks wrong (including whenever the check itself can't
+    be completed, e.g. PyMuPDF unavailable, encrypted/corrupt file - a
+    failed *check* must never block a real upload that would otherwise
+    succeed or fail on its own merits).
+
+    Two-tier detection:
+    1. If the page has an explicit "Machine: <id>" label (as this corpus's
+       manuals do), compare it directly - high precision.
+    2. Otherwise, fall back to a soft heuristic: does the page mention a
+       *different* registered machine's code while never mentioning the
+       selected one at all.
+    """
+    try:
+        import fitz
+    except ImportError:
+        return None
+
+    tmp_path = tempfile.mktemp(suffix=".pdf")
+    try:
+        with open(tmp_path, "wb") as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+        try:
+            doc = fitz.open(tmp_path)
+        except Exception:
+            return None
+        try:
+            if doc.is_encrypted or doc.page_count == 0:
+                return None
+            first_page_text = doc.load_page(0).get_text("text")
+        finally:
+            doc.close()
+    except Exception:
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+
+    selected_code = selected_machine.machine_id.upper()
+    label_match = _MACHINE_LABEL_RE.search(first_page_text)
+    if label_match:
+        declared = label_match.group(1).strip()
+        if selected_code not in declared.upper():
+            return (
+                f'This document\'s first page declares "Machine: {declared}", which does not '
+                f"appear to match the selected machine ({selected_machine.machine_id}). "
+                "Confirm this is the correct machine before uploading."
+            )
+        return None
+
+    text_upper = first_page_text.upper()
+    if selected_code in text_upper:
+        return None
+    others = [
+        m.machine_id
+        for m in Machine.objects.exclude(id=selected_machine.id)
+        if m.machine_id.upper() in text_upper
+    ]
+    if others:
+        return (
+            f"This document's first page mentions {', '.join(others)} but not the selected "
+            f"machine ({selected_machine.machine_id}). Confirm this is the correct machine "
+            "before uploading."
+        )
+    return None
 
 
 def chunk_page_text(text: str) -> list[str]:
@@ -233,3 +315,99 @@ def retrieve_chunks(machine: Machine, question_text: str) -> list[RetrievedChunk
         deduped.append(r)
 
     return deduped[: settings.RAG_TOP_K]
+
+
+_ALARM_CODE_RE = re.compile(r"\b[Ee]\d{1,3}\b")
+_FILTER_CODE_RE = re.compile(r"\b([A-Z]{2}-\d{1,3})\b")
+_RECORD_ESCALATION_RE = re.compile(r"record[\s\S]{0,60}escalat|escalat[\s\S]{0,60}record", re.IGNORECASE)
+
+
+def generate_recommended_questions(machine: Machine, limit: int = 6) -> list[str]:
+    """
+    Deterministic, LLM-free question suggestions built only from this
+    machine's own successfully-indexed chunks - the exact same trusted,
+    machine-scoped query (`Chunk.objects.filter(machine=machine)`) that
+    retrieval itself uses, so a suggestion can never be derived from
+    another machine's manuals. Never calls Groq - this must not add LLM
+    cost or latency to a dashboard load. Returns [] if nothing suitable
+    was found in the indexed text, rather than padding the list with
+    generic, unsupported questions.
+
+    Pattern-based, not content-generating: every rule here only turns an
+    already-present textual pattern (an alarm code, a filter identifier, a
+    recognized section topic) into a natural question to *ask* - it never
+    asserts a fact of its own, so there is nothing for it to invent.
+    """
+    texts = list(Chunk.objects.filter(machine=machine).values_list("text", flat=True))
+    if not texts:
+        return []
+    full_text = "\n".join(texts)
+    # Document IDs (e.g. "HP-MNT-01") share the same [A-Z]+-\d+ shape as real
+    # filter/part codes (e.g. "AF-10") and appear on nearly every page as a
+    # header, often near the word "filter" purely by chunking coincidence -
+    # exclude anything that's actually a fragment of this machine's own
+    # document IDs so a heading never gets mistaken for a part code.
+    document_ids_upper = {
+        d.upper() for d in Manual.objects.filter(machine=machine).values_list("document_id", flat=True)
+    }
+    # The machine's own id/model (e.g. "AC-90") also match the same code
+    # shape and turn up next to "filter" in cross-reference sentences like
+    # "The HP-200 RF-20 filter is not the AC-90 filter" - exclude those too,
+    # alongside document-ID fragments, so only a genuine part code is used.
+    excluded_codes = document_ids_upper | {machine.machine_id.upper(), machine.model.upper()}
+
+    questions: list[str] = []
+
+    alarm_codes: list[str] = []
+    for code in _ALARM_CODE_RE.findall(full_text):
+        code = code.upper()
+        if code not in alarm_codes:
+            alarm_codes.append(code)
+    for code in alarm_codes[:2]:
+        questions.append(f"What does {code} indicate?")
+
+    for chunk_text in texts:
+        lowered = chunk_text.lower()
+        if "filter" not in lowered:
+            continue
+        found_code = None
+        for match in _FILTER_CODE_RE.finditer(chunk_text):
+            code = match.group(1)
+            if any(code.upper() in excluded for excluded in excluded_codes):
+                continue  # a document-ID or machine-model fragment, not a real part code
+            # Only trust a code that actually appears close to the word
+            # "filter" in the text, not merely somewhere in the same chunk.
+            window_start = max(0, match.start() - 25)
+            window_end = min(len(chunk_text), match.end() + 25)
+            if "filter" not in chunk_text[window_start:window_end].lower():
+                continue
+            found_code = code
+            break
+        if found_code:
+            question = f"How should the {found_code} filter be inspected?"
+            if question not in questions:
+                questions.append(question)
+            break
+
+    if re.search(r"before each shift|inspection schedule", full_text, re.IGNORECASE):
+        questions.append("What maintenance checks are required before each shift?")
+
+    if _RECORD_ESCALATION_RE.search(full_text):
+        questions.append("What should be recorded before escalation?")
+
+    if re.search(r"\bREADY\b", full_text) and re.search(r"\bHOLD\b", full_text):
+        questions.append("What do the machine's operating states mean?")
+
+    if re.search(r"troubleshooting", full_text, re.IGNORECASE):
+        questions.append("What troubleshooting steps are documented for this machine?")
+
+    if re.search(r"maintenance schedule", full_text, re.IGNORECASE):
+        questions.append("What is the maintenance schedule for this machine?")
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for q in questions:
+        if q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped[:limit]

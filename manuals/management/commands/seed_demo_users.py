@@ -22,9 +22,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         for username, role in DEMO_USERS:
             user, created = User.objects.get_or_create(username=username)
-            if created:
-                user.set_password(DEMO_PASSWORD)
-                user.save()
+            user.set_password(DEMO_PASSWORD)
+            user.save()
             Profile.objects.update_or_create(user=user, defaults={"role": role})
             status = "created" if created else "updated"
             self.stdout.write(self.style.SUCCESS(f"{status}: {username} -> {role}"))

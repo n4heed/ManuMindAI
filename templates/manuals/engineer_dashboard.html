@@ -3,57 +3,216 @@
 {% block page_title %}Ask the Manual Assistant{% endblock %}
 {% block content %}
 
-<div class="flat-card mb-4">
-  <div class="flat-card-body">
-    <form id="ask-form" novalidate>
-      <div class="mb-3">
-        <label class="form-label" for="machine-select">Machine</label>
-        <select class="form-select" name="machine" id="machine-select" required aria-describedby="machine-select-help"></select>
-        <div id="machine-select-help" class="form-text text-muted-strong">The answer is restricted to this machine's own manuals.</div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="question-text">Maintenance question</label>
-        <textarea class="form-control" id="question-text" name="question_text" rows="2" placeholder="e.g. What does E17 mean?" required></textarea>
-      </div>
-      <button class="btn btn-primary" type="submit" id="ask-submit">Ask</button>
-    </form>
+<div class="tab-nav" role="tablist" aria-label="Engineer dashboard sections">
+  <button type="button" class="tab-button active" role="tab" id="tab-home" aria-selected="true" aria-controls="panel-home">Home</button>
+  <button type="button" class="tab-button" role="tab" id="tab-history" aria-selected="false" tabindex="-1" aria-controls="panel-history">Question History</button>
+</div>
+
+<div id="panel-home" role="tabpanel" aria-labelledby="tab-home">
+  <div class="flat-card mb-4">
+    <div class="flat-card-body">
+      <form id="ask-form" novalidate>
+        <div class="mb-3">
+          <label class="form-label" for="machine-select">Machine</label>
+          <select class="form-select" name="machine" id="machine-select" required aria-describedby="machine-select-help"></select>
+          <div id="machine-select-help" class="form-text text-muted-strong">The answer is restricted to this machine's own manuals.</div>
+        </div>
+        <div class="mb-3" id="recommended-questions-area" aria-live="polite"></div>
+        <div class="mb-3">
+          <label class="form-label" for="question-text">Maintenance question</label>
+          <textarea class="form-control" id="question-text" name="question_text" rows="2" placeholder="e.g. What does E17 mean?" required></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" id="ask-submit">Ask</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="home-answer-area" aria-live="polite">
+    <div class="empty-state">Ask a question above to see the RAG-only and Groq AI answers here.</div>
   </div>
 </div>
 
-<div id="answer-area" aria-live="polite"></div>
+<div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+  <div class="flat-card mb-3">
+    <div class="flat-card-body">
+      <div class="filter-toolbar">
+        <div class="filter-field">
+          <label for="filter-search">Search</label>
+          <input type="search" class="form-control form-control-sm" id="filter-search" placeholder="Question or machine&hellip;">
+        </div>
+        <div class="filter-field">
+          <label for="filter-machine">Machine</label>
+          <select class="form-select form-select-sm" id="filter-machine">
+            <option value="">All machines</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="filter-status">Status</label>
+          <select class="form-select form-select-sm" id="filter-status">
+            <option value="">All statuses</option>
+            <option value="both_completed">Both answers completed</option>
+            <option value="rag_completed">RAG-only completed</option>
+            <option value="groq_completed">Groq completed</option>
+            <option value="groq_failed">Groq failed</option>
+            <option value="insufficient_evidence">Insufficient evidence</option>
+            <option value="groq_unavailable">Groq unavailable</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="filter-sort">Sort</label>
+          <select class="form-select form-select-sm" id="filter-sort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="filter-clear">Clear filters</button>
+        </div>
+      </div>
+      <div class="filter-result-count mt-2" id="filter-result-count"></div>
+    </div>
+  </div>
 
-<h2 class="section-heading mt-4">Your question history</h2>
-<div id="history-area"><div class="empty-state">Loading&hellip;</div></div>
+  <div id="history-list-area"><div class="empty-state">Loading&hellip;</div></div>
+  <div id="history-detail-area" hidden></div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+let historyQuestions = [];
+let filteredQuestions = [];
+let historyLoaded = false;
+let machinesCache = [];
+
 async function loadMachines() {
   const resp = await apiFetch('/api/machines/');
-  const machines = await resp.json();
-  document.getElementById('machine-select').innerHTML =
-    machines.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
+  machinesCache = await resp.json();
+  // The ask-form only ever offers ACTIVE machines - an archived machine no
+  // longer accepts new questions (also enforced server-side, see
+  // AskQuestionSerializer). The history filter still lists every machine,
+  // including archived ones, since past questions may reference them.
+  const activeMachines = machinesCache.filter(m => !m.is_archived);
+  const activeOptions = activeMachines.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}</option>`).join('');
+  const allOptions = machinesCache.map(m => `<option value="${m.id}">${escapeHtml(m.machine_id)} - ${escapeHtml(m.name)}${m.is_archived ? ' (archived)' : ''}</option>`).join('');
+  document.getElementById('machine-select').innerHTML = activeOptions;
+  document.getElementById('filter-machine').innerHTML = '<option value="">All machines</option>' + allOptions;
+  if (activeMachines.length) {
+    loadRecommendedQuestions(document.getElementById('machine-select').value);
+  }
+}
+
+// --- Recommended questions: deterministic, backend-generated, no LLM call ---
+
+async function loadRecommendedQuestions(machineId) {
+  const area = document.getElementById('recommended-questions-area');
+  if (!machineId) {
+    area.innerHTML = '';
+    return;
+  }
+  area.innerHTML = '<div class="recommend-label">Recommended questions</div><div class="text-muted-strong small">Loading suggestions&hellip;</div>';
+  let questions = [];
+  try {
+    const resp = await apiFetch(`/api/machines/${machineId}/recommended-questions/`);
+    if (resp.ok) {
+      const body = await resp.json();
+      questions = body.questions || [];
+    }
+  } catch (err) {
+    area.innerHTML = '';
+    return;
+  }
+  const machine = machinesCache.find(m => String(m.id) === String(machineId));
+  const machineLabel = machine ? machine.machine_id : '';
+  if (!questions.length) {
+    area.innerHTML = `
+      <div class="recommend-label">Recommended questions${machineLabel ? ' for ' + escapeHtml(machineLabel) : ''}</div>
+      <div class="text-muted-strong small">No recommended questions available for this machine yet. Upload and process its manuals to get suggestions.</div>`;
+    return;
+  }
+  area.innerHTML = `
+    <div class="recommend-label">Recommended questions${machineLabel ? ' for ' + escapeHtml(machineLabel) : ''}</div>
+    <div class="recommend-chips">
+      ${questions.map(q => `<button type="button" class="recommend-chip">${escapeHtml(q)}</button>`).join('')}
+    </div>`;
+  area.querySelectorAll('.recommend-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const textarea = document.getElementById('question-text');
+      textarea.value = btn.textContent;
+      textarea.focus();
+      // Populates the field for the Engineer to review/edit - never submits
+      // automatically, and never changes the machine selection.
+    });
+  });
 }
 
 function renderQuestion(q) {
   return `
     <div class="mb-4">
+      <div class="text-muted-strong small mb-1">Answered for <strong style="color: var(--color-text);">${escapeHtml(q.machine_id_code)}</strong> &middot; ${new Date(q.created_at).toLocaleString()}</div>
       <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
         <h3 class="h6 mb-0">${escapeHtml(q.question_text)}</h3>
       </div>
       ${renderDualAnswers(q)}
-      <div class="text-muted-strong small mt-2">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
     </div>`;
 }
 
-async function loadHistory() {
-  const resp = await apiFetch('/api/questions/');
-  const questions = await resp.json();
-  const area = document.getElementById('history-area');
-  area.innerHTML = questions.length
-    ? questions.map(renderQuestion).join('')
-    : '<div class="empty-state">No questions asked yet.</div>';
+// --- Tabs ------------------------------------------------------------
+
+const TAB_ORDER = ['tab-home', 'tab-history'];
+
+function activateTab(tabId) {
+  const config = {'tab-home': 'panel-home', 'tab-history': 'panel-history'};
+  Object.entries(config).forEach(([btnId, panelId]) => {
+    const isActive = btnId === tabId;
+    const btn = document.getElementById(btnId);
+    const panel = document.getElementById(panelId);
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    btn.tabIndex = isActive ? 0 : -1;
+    panel.hidden = !isActive;
+  });
+  if (tabId === 'tab-history' && !historyLoaded) {
+    loadHistory();
+  }
 }
+
+document.getElementById('tab-home').addEventListener('click', () => activateTab('tab-home'));
+document.getElementById('tab-history').addEventListener('click', () => activateTab('tab-history'));
+
+document.querySelector('[role="tablist"]').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const current = document.activeElement.id;
+  let idx = TAB_ORDER.indexOf(current);
+  if (idx === -1) return;
+  idx = e.key === 'ArrowRight' ? (idx + 1) % TAB_ORDER.length : (idx - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+  const next = document.getElementById(TAB_ORDER[idx]);
+  next.focus();
+  activateTab(TAB_ORDER[idx]);
+});
+
+// --- Home: ask a question, show only its own answer -------------------
+
+const EMPTY_HOME_STATE = '<div class="empty-state">Ask a question above to see the RAG-only and Groq AI answers here.</div>';
+// The machine the currently-displayed Home answer was actually generated
+// for - set only when a real answer is shown. Used to detect when the
+// Engineer changes the machine selector after an answer is already on
+// screen, so a stale answer is never left looking like it belongs to the
+// machine now selected (see renderQuestion(), which also labels each
+// answer with its own machine).
+let currentAnswerMachineId = null;
+
+document.getElementById('machine-select').addEventListener('change', (e) => {
+  if (currentAnswerMachineId !== null && String(currentAnswerMachineId) !== e.target.value) {
+    document.getElementById('home-answer-area').innerHTML = EMPTY_HOME_STATE;
+    currentAnswerMachineId = null;
+  }
+  // Recommendations are always for the currently selected machine only -
+  // refresh (and implicitly discard the previous machine's suggestions)
+  // on every change, with its own loading state.
+  loadRecommendedQuestions(e.target.value);
+});
 
 document.getElementById('ask-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -62,8 +221,8 @@ document.getElementById('ask-form').addEventListener('submit', async (e) => {
   const submitBtn = document.getElementById('ask-submit');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Asking...';
-  const answerArea = document.getElementById('answer-area');
-  answerArea.innerHTML = '';
+  const answerArea = document.getElementById('home-answer-area');
+  answerArea.innerHTML = '<div class="empty-state">Generating the answer&hellip; this may take a few seconds.</div>';
   try {
     const resp = await apiFetch('/api/questions/ask/', {
       method: 'POST',
@@ -73,8 +232,18 @@ document.getElementById('ask-form').addEventListener('submit', async (e) => {
     if (resp.ok) {
       const question = await resp.json();
       answerArea.innerHTML = renderQuestion(question);
+      currentAnswerMachineId = question.machine;
       form.reset();
-      await loadHistory();
+      // form.reset() restores the machine selector to its first <option>,
+      // not necessarily the one just answered for - keep the selector
+      // showing the machine this answer actually belongs to so the two
+      // never visibly disagree.
+      document.getElementById('machine-select').value = String(question.machine);
+      // The new question isn't reflected in any cached history list yet -
+      // invalidate it so the next time History is opened it fetches fresh,
+      // rather than making an extra request right now that the Engineer
+      // may never look at.
+      historyLoaded = false;
     } else {
       const body = await resp.json();
       answerArea.innerHTML = `<div class="flat-alert flat-alert-danger"><span>${escapeHtml(JSON.stringify(body))}</span></div>`;
@@ -85,7 +254,137 @@ document.getElementById('ask-form').addEventListener('submit', async (e) => {
   }
 });
 
+// --- Question History: list + detail, read-only, no new API calls per click ---
+
+function renderHistorySummary(q, index) {
+  return `
+    <button type="button" class="flat-card history-item mb-2" data-index="${index}">
+      <div class="flat-card-body py-2">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <div>
+            <div class="fw-semibold" style="color: var(--color-text);">${escapeHtml(q.question_text)}</div>
+            <div class="text-muted-strong small">${escapeHtml(q.machine_id_code)} &middot; ${new Date(q.created_at).toLocaleString()}</div>
+          </div>
+          <div class="d-flex gap-1 flex-shrink-0">
+            ${renderStatusBadge(q.answers.rag_only.status)}
+            ${renderGroqStatusBadge(q.answers.rag_groq.status)}
+          </div>
+        </div>
+      </div>
+    </button>`;
+}
+
+function renderHistoryList(list) {
+  const listArea = document.getElementById('history-list-area');
+  if (!historyQuestions.length) {
+    listArea.innerHTML = '<div class="empty-state">No questions asked yet.</div>';
+    return;
+  }
+  if (!list.length) {
+    listArea.innerHTML = '<div class="empty-state">No questions match the current filters.</div>';
+    return;
+  }
+  listArea.innerHTML = list.map((q, i) => renderHistorySummary(q, i)).join('');
+  listArea.querySelectorAll('.history-item').forEach((btn) => {
+    btn.addEventListener('click', () => showHistoryDetail(parseInt(btn.dataset.index, 10)));
+  });
+}
+
+// --- History filters: all client-side over the already-fetched list -----
+// (no pagination exists on /api/questions/, and this Engineer's own
+// history is small enough to filter in the browser - no extra requests,
+// no N+1 queries, nothing server-side to keep in sync.)
+
+function matchesSearch(q, term) {
+  if (!term) return true;
+  const t = term.toLowerCase();
+  return q.question_text.toLowerCase().includes(t) || q.machine_id_code.toLowerCase().includes(t);
+}
+
+function matchesStatus(q, statusFilter) {
+  if (!statusFilter) return true;
+  const ragStatus = q.answers.rag_only.status;
+  const groqStatus = q.answers.rag_groq.status;
+  switch (statusFilter) {
+    case 'both_completed': return ragStatus === 'answered' && groqStatus === 'completed';
+    case 'rag_completed': return ragStatus === 'answered';
+    case 'groq_completed': return groqStatus === 'completed';
+    case 'groq_failed': return groqStatus === 'failed';
+    case 'insufficient_evidence': return ragStatus === 'insufficient_evidence';
+    case 'groq_unavailable': return groqStatus === 'unavailable';
+    default: return true;
+  }
+}
+
+function applyFiltersAndRender() {
+  const search = document.getElementById('filter-search').value.trim();
+  const machineVal = document.getElementById('filter-machine').value;
+  const statusVal = document.getElementById('filter-status').value;
+  const sortVal = document.getElementById('filter-sort').value;
+
+  filteredQuestions = historyQuestions.filter(q =>
+    matchesSearch(q, search)
+    && (!machineVal || String(q.machine) === machineVal)
+    && matchesStatus(q, statusVal)
+  );
+  filteredQuestions.sort((a, b) => {
+    const diff = new Date(a.created_at) - new Date(b.created_at);
+    return sortVal === 'oldest' ? diff : -diff;
+  });
+
+  renderHistoryList(filteredQuestions);
+  document.getElementById('filter-result-count').textContent = historyQuestions.length
+    ? `Showing ${filteredQuestions.length} of ${historyQuestions.length} questions`
+    : '';
+}
+
+['filter-search', 'filter-machine', 'filter-status', 'filter-sort'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', applyFiltersAndRender);
+  document.getElementById(id).addEventListener('change', applyFiltersAndRender);
+});
+
+document.getElementById('filter-clear').addEventListener('click', () => {
+  document.getElementById('filter-search').value = '';
+  document.getElementById('filter-machine').value = '';
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-sort').value = 'newest';
+  applyFiltersAndRender();
+});
+
+async function loadHistory() {
+  const listArea = document.getElementById('history-list-area');
+  listArea.hidden = false;
+  document.getElementById('history-detail-area').hidden = true;
+  listArea.innerHTML = '<div class="empty-state">Loading&hellip;</div>';
+  try {
+    const resp = await apiFetch('/api/questions/');
+    if (!resp.ok) throw new Error('history request failed');
+    historyQuestions = await resp.json();
+    historyLoaded = true;
+  } catch (err) {
+    listArea.innerHTML = '<div class="flat-alert flat-alert-danger"><span>Could not load question history. Please try again.</span></div>';
+    return;
+  }
+  applyFiltersAndRender();
+}
+
+function showHistoryDetail(index) {
+  // Purely a client-side view of already-fetched data - selecting a past
+  // question never calls the API again and never touches the Home answer.
+  const q = filteredQuestions[index];
+  document.getElementById('history-list-area').hidden = true;
+  const detailArea = document.getElementById('history-detail-area');
+  detailArea.hidden = false;
+  detailArea.innerHTML = `
+    <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="history-back-btn">&larr; Back to history</button>
+    ${renderQuestion(q)}`;
+  document.getElementById('history-back-btn').addEventListener('click', () => {
+    detailArea.hidden = true;
+    detailArea.innerHTML = '';
+    document.getElementById('history-list-area').hidden = false;
+  });
+}
+
 loadMachines();
-loadHistory();
 </script>
 {% endblock %}

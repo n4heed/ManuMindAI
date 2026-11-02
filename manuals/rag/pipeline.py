@@ -21,9 +21,18 @@ def _normalize_whitespace(text: str) -> str:
     wording, punctuation, or case - a quote must still be a real substring."""
     return " ".join(text.split())
 
-INSUFFICIENT_EVIDENCE_MESSAGE = (
-    "The available manuals for this machine do not contain enough information to answer this question."
-)
+def build_insufficient_evidence_message(machine: Machine) -> str:
+    """
+    Machine-specific so an Engineer immediately knows which machine's
+    manuals were searched, not just "this machine" - and is pointed at the
+    most likely real-world cause (the relevant manual hasn't been uploaded
+    and assigned to this machine yet), rather than leaving them to guess.
+    """
+    return (
+        f"The manuals currently registered for {machine.machine_id} do not contain sufficient "
+        "information to answer this question. Check whether the relevant manual has been "
+        "uploaded and assigned to this machine."
+    )
 
 
 def answer_question(user: AbstractUser, machine: Machine, question_text: str) -> Question:
@@ -36,15 +45,16 @@ def answer_question(user: AbstractUser, machine: Machine, question_text: str) ->
         # Insufficient evidence: neither generator runs. Groq is never
         # called, and its status/answer reflect the same abstention as the
         # RAG-only path - not a separate "unavailable" or an attempted call.
+        message = build_insufficient_evidence_message(machine)
         question = Question.objects.create(
             user=user,
             machine=machine,
             question_text=question_text,
-            answer_text=INSUFFICIENT_EVIDENCE_MESSAGE,
+            answer_text=message,
             status=Question.Status.INSUFFICIENT_EVIDENCE,
             llm_provider="none",
             groq_status=Question.GroqStatus.INSUFFICIENT_EVIDENCE,
-            groq_answer_text=INSUFFICIENT_EVIDENCE_MESSAGE,
+            groq_answer_text=message,
         )
         return question
 
@@ -72,6 +82,8 @@ def answer_question(user: AbstractUser, machine: Machine, question_text: str) ->
             Citation(
                 question=question,
                 manual=r.chunk.manual,
+                manual_document_id=r.chunk.manual.document_id,
+                manual_revision=r.chunk.manual.revision,
                 page_number=r.chunk.page.page_number,
                 excerpt=r.chunk.text[:400],
                 score=r.score,
@@ -152,7 +164,7 @@ def _attach_groq_answer(question: Question, question_text: str, retrieved: list[
         # The model itself judged the evidence insufficient (distinct from
         # the "no retrieval at all" case above, which never calls Groq).
         question.groq_status = Question.GroqStatus.INSUFFICIENT_EVIDENCE
-        question.groq_answer_text = INSUFFICIENT_EVIDENCE_MESSAGE
+        question.groq_answer_text = build_insufficient_evidence_message(question.machine)
         question.groq_model = provider.model
         question.groq_error_message = ""
         question.groq_generation_time_ms = elapsed_ms
@@ -199,6 +211,8 @@ def _attach_groq_answer(question: Question, question_text: str, retrieved: list[
                     question=question,
                     claim=claim,
                     manual=r.chunk.manual,
+                    manual_document_id=r.chunk.manual.document_id,
+                    manual_revision=r.chunk.manual.revision,
                     page_number=r.chunk.page.page_number,
                     excerpt=r.chunk.text[:400],
                     quote=quote,
